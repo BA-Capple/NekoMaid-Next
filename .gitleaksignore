@@ -1,0 +1,6 @@
+# gitleaks 忽略清单：仅放确认的误报 / 无法修复的环境文件（fingerprint 一行一个）。
+# 生成方式：gitleaks detect --source . --no-git --report-format json --report-path report.json
+
+# JDK 自带 java.security 的 TLS 密钥长度限制配置（gitleaks generic-api-key 误报）。
+# 位于本地 Gradle JDK 缓存目录（.gradle-user，已加入 .gitignore，本就不进版本库）。
+.gradle-user/jdks/eclipse_adoptium-25-amd64-windows.2/conf/security/java.security:generic-api-key:961

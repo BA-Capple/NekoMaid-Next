@@ -2,7 +2,6 @@ package cn.apisium.nekomaid.builtin;
 
 import cn.apisium.nekomaid.NekoMaid;
 import cn.apisium.nekomaid.utils.Utils;
-import org.apache.commons.lang.ObjectUtils;
 import org.bukkit.*;
 import org.bukkit.entity.Player;
 
@@ -53,7 +52,9 @@ final class PlayerList {
     @SuppressWarnings({"deprecation", "ConstantConditions"})
     public static void init(NekoMaid main) {
         Server server = main.getServer();
-        main.onConnected(main, client -> client.onWithAck("playerList:fetchPage", args -> {
+        main.onConnected(main, client -> {
+            if (!client.hasPermission("playerList")) return; // secondary tokens: no player list access
+            client.onWithAck("playerList:fetchPage", args -> {
             Stream<OfflinePlayer> list;
             int page = (int) args[0], state = (int) args[1];
             Set<OfflinePlayer> whiteList = server.getWhitelistedPlayers();
@@ -80,6 +81,7 @@ final class PlayerList {
                     .contains(filter)).collect(Collectors.toList());
             return new List(copy.size(), mapPlayersToObject(page, whiteList, banList, copy.stream()));
         }).on("playerList:ban", it -> {
+            if (!client.hasPermission("players")) return; // admin-level action
             try {
                 String msg = ((String) it[1]).isEmpty() ? null : (String) it[1];
                 main.getServer().getBanList(BanList.Type.NAME).addBan((String) it[0], msg, null, "NekoMaid").save();
@@ -90,12 +92,15 @@ final class PlayerList {
                 e.printStackTrace();
             }
         }).on("playerList:pardon", it -> {
+            if (!client.hasPermission("players")) return; // admin-level action
             main.getServer().getBanList(BanList.Type.NAME).pardon((String) it[0]);
             main.getLogger().info("Unbanned " + it[0]);
         }).on("playerList:addWhitelist", it -> {
+            if (!client.hasPermission("players")) return; // admin-level action
             main.getServer().getOfflinePlayer((String) it[0]).setWhitelisted(true);
             main.getLogger().info("Added " + it[0] + " to the whitelist");
         }).on("playerList:removeWhitelist", it -> {
+            if (!client.hasPermission("players")) return; // admin-level action
             main.getServer().getOfflinePlayer((String) it[0]).setWhitelisted(false);
             main.getLogger().info("Removed " + it[0] + " from the whitelist");
         }).onWithAck("playerList:query", it -> {
@@ -125,7 +130,8 @@ final class PlayerList {
                 d.tnt = p1.getStatistic(Statistic.USE_ITEM, Material.TNT);
             }
             return d;
-        }));
+        });
+    });
     }
 
     @SuppressWarnings("ConstantConditions")
@@ -140,8 +146,8 @@ final class PlayerList {
             String ban = null, name = p.getName();
             if (name != null) {
                 BanEntry be = banList.getBanEntry(name);
-                if (be != null) ban = (String) ObjectUtils.defaultIfNull(be.getReason(), "Banned by " +
-                        be.getTarget() + "!");
+                if (be != null) ban = be.getReason() != null ? be.getReason() : "Banned by " +
+                        be.getTarget() + "!";
             }
             PlayerData pd = new PlayerData();
             pd.online = p.isOnline();

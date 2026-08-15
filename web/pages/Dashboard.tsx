@@ -217,15 +217,17 @@ const WorldMap: React.FC<{ players: Player[] }> = React.memo(({ players }) => {
   const globalData = useGlobalData()
   const [, update] = useState(0)
   if (!mapAdded) {
+    mapAdded = true
+    // 百度地图 key 必须由服务端配置下发（config.yml baidu-map-license-key），禁止硬编码
+    if (!globalData.bMapKey) return null
     const node = document.createElement('script')
     node.type = 'text/javascript'
-    node.src = 'http://api.map.baidu.com/getscript?v=3.0&ak=' + (globalData.bMapKey || '8G2uX6PFlYK3XCdcWYxH5sPVEA9K88QT')
+    node.src = 'https://api.map.baidu.com/getscript?v=3.0&ak=' + globalData.bMapKey
     node.onload = () => {
       mapLoaded = true
       update(id => id + 1)
     }
     document.body.appendChild(node)
-    mapAdded = true
   }
 
   return mapLoaded

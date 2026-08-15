@@ -28,7 +28,9 @@ public final class ServerConfig {
 
     public static void init(NekoMaid main) {
         if (canSetMaxPlayers) main.GLOBAL_DATA.put("canSetMaxPlayers", true);
-        main.onConnected(main, client -> client
+        main.onConnected(main, client -> {
+            if (!client.hasPermission("config")) return; // secondary tokens: no server/nekomaid settings
+            client
                 .on("server:set", args -> main.getServer().getScheduler().runTask(main, () -> {
                     switch ((String) args[0]) {
                         case "maxPlayers": if (canSetMaxPlayers) main.getServer().setMaxPlayers((int) args[1]); break;
@@ -43,8 +45,8 @@ public final class ServerConfig {
                                 .invoke(null));
                     } catch (Throwable ignored) { canGetData = false; }
                     return null;
-                })
-        );
+                });
+        });
         main.getServer().getPluginManager().registerEvent(ServerListPingEvent.class, main, EventPriority.NORMAL,
                 (p, e) -> {
                     if (motd != null) ((ServerListPingEvent) e).setMotd(motd);

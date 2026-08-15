@@ -29,6 +29,7 @@ import BlockEditor from './BlockEditor'
 import EntityEditor from './EntityEditor'
 import Config from './Config'
 import Inventory, { playerAction } from './Inventory'
+import TokenManage from './TokenManage'
 
 export const ProfilerIcon: React.FC = () => {
   const plugin = usePlugin()
@@ -55,6 +56,7 @@ export default (p: Plugin) => p.addPages(
   { component: loadable(() => import('./Profiler')), path: 'profiler', icon: ProfilerIcon, title: lang.profiler.title },
   { component: loadable(() => import('./Scheduler')), path: 'scheduler', icon: <Schedule />, title: lang.scheduler.title },
   { component: Inventory, path: ['inventory', 'inventory/:name'], icon: <Backpack />, title: lang.inventory.title },
+  { component: TokenManage, path: 'tokenManage', icon: <Settings />, title: lang.tokenManage.title },
   { component: Config, path: 'config', icon: <Settings />, title: lang.config.title }
 ).addPlayerAction(playerAction)
 

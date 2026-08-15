@@ -1,0 +1,33 @@
+name: NekoMaid
+version: 0.0.0
+main: cn.apisium.nekomaid.NekoMaid
+description: A plugin can use Web to manage your server.
+author: Shirasawa
+website: https://neko-craft.com
+api-version: '26.2'
+
+commands:
+  nekomaid:
+    permission: neko.maid.use
+    description: Can use NekoMaid.
+    aliases: [nm]
+
+permissions:
+  neko.maid.use:
+    description: Use NekoMaid (view the management URL, help, generate temporary tokens).
+    default: op
+  neko.maid.admin:
+    description: Administrative NekoMaid commands (reload, diagnostic, invalidate temporary tokens).
+    default: op
+  neko.maid.2fa:
+    description: Manage two-factor authentication (setup, enable, disable, status).
+    default: op
+
+softdepend:
+  - Vault
+  - NBTAPI
+  - OpenInv
+  - InvSeePlusPlus
+  - PlugMan
+  - PlaceholderAPI
+  - Multiverse-Core

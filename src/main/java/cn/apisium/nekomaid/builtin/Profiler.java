@@ -3,7 +3,6 @@ package cn.apisium.nekomaid.builtin;
 import cn.apisium.nekomaid.NekoMaid;
 import cn.apisium.nekomaid.utils.OshiWrapper;
 import cn.apisium.nekomaid.utils.Timings;
-import cn.apisium.nekomaid.utils.TimingsV1;
 import cn.apisium.nekomaid.utils.Utils;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
@@ -80,9 +79,9 @@ public final class Profiler implements Listener, NotificationListener {
         this.main = main;
         if (Timings.INSTANCE != null) {
             main.GLOBAL_DATA.put("hasTimings", true);
-            if (Timings.INSTANCE.getClass() == TimingsV1.class) main.GLOBAL_DATA.put("isTimingsV1", true);
         }
         main.onConnected(main, client -> {
+            if (!client.hasPermission("profiler")) return; // secondary tokens: read-only scope
             client.on("profiler:status", args -> {
                 started = (boolean) args[0];
                 if (started) main.GLOBAL_DATA.put("profilerStarted", true);

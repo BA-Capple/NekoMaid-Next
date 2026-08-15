@@ -1,0 +1,20 @@
+# 统一行尾：仓库内一律 LF（Git 检出时按平台转换），避免 Windows/Unix 混合换行
+* text=auto
+
+# 脚本/代码显式 LF
+*.java text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+
+# Windows 批处理显式 CRLF
+*.bat text eol=crlf
+
+# 二进制
+*.png binary
+*.jar binary
+*.svg binary
+*.png binary

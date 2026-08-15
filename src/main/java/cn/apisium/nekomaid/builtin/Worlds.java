@@ -23,7 +23,7 @@ import java.util.UUID;
 
 final class Worlds {
     private boolean hasWorldGameRuleChangeEvent, canSetViewDistance, hasSeparateViewDistance;
-    private final Plugin mv;
+    private Plugin mv;
     private final NekoMaid main;
     private static boolean hasPaperMethod;
 
@@ -70,8 +70,18 @@ final class Worlds {
     public Worlds(NekoMaid main) {
         this.main = main;
         mv = main.getServer().getPluginManager().getPlugin("Multiverse-Core");
-        if (mv != null) main.GLOBAL_DATA.put("hasMultiverse", true);
+        if (mv != null) try {
+            // Only Multiverse-Core 4.x exposes com.onarandombox.MultiverseCore.*. Newer 5.x
+            // renamed its packages (org.mvplugins.multiverse.core.*) and the API differs, so
+            // loading the old class is the compatibility probe; on failure we disable integration.
+            Class.forName("com.onarandombox.MultiverseCore.MultiverseCore");
+            main.GLOBAL_DATA.put("hasMultiverse", true);
+        } catch (Throwable e) {
+            mv = null;
+            if (main.isDebug()) e.printStackTrace();
+        }
         main.onConnected(main, client -> {
+            if (!client.hasPermission("worlds")) return; // secondary tokens: read-only scope
             client.onWithAck("worlds:fetch", this::getWorlds)
                     .onWithAck("worlds:weather", args -> {
                         org.bukkit.World world = main.getServer().getWorld(UUID.fromString((String) args[0]));
@@ -132,9 +142,9 @@ final class Worlds {
             }).onWithAck("worlds:save", args -> {
                 org.bukkit.World world = main.getServer().getWorld(UUID.fromString((String) args[0]));
                 if (world == null) return;
-                main.getServer().getScheduler().runTask(main, world::save);
+                main.getServer().getScheduler().runTask(main, () -> world.save());
             });
-            if (mv != null) {
+            if (mv != null) try {
                 MVWorldManager wm = ((MultiverseCore) mv).getMVWorldManager();
                 client.onWithAck("worlds:set", args -> {
                     org.bukkit.World world = main.getServer().getWorld(UUID.fromString((String) args[0]));
@@ -149,6 +159,9 @@ final class Worlds {
                         }
                     });
                 });
+            } catch (Throwable e) {
+                // Multiverse integration failed at connection time (e.g. API mismatch) - degrade gracefully.
+                if (main.isDebug()) e.printStackTrace();
             }
         });
         Events events = new Events();
@@ -209,12 +222,14 @@ final class Worlds {
             w.seed = it.getSeed();
             w.rules = Arrays.stream(it.getGameRules()).map(r -> new String[] { r, it.getGameRuleValue(r) })
                     .toArray(String[][]::new);
-            if (mv != null) {
+            if (mv != null) try {
                 MultiverseWorld mw = ((MultiverseCore) mv).getMVWorldManager().getMVWorld(it);
                 w.alias = mw.getAlias();
                 w.allowFlight = mw.getAllowFlight();
                 w.autoHeal = mw.getAutoHeal();
                 w.hunger = mw.getHunger();
+            } catch (Throwable e) {
+                if (main.isDebug()) e.printStackTrace();
             }
             return w;
         }).toArray());

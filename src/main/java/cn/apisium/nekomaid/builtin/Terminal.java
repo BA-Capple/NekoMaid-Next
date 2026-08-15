@@ -5,6 +5,7 @@ import cn.apisium.nekomaid.utils.Utils;
 import com.google.common.collect.EvictingQueue;
 import net.md_5.bungee.api.chat.BaseComponent;
 import net.md_5.bungee.api.chat.TextComponent;
+import net.kyori.adventure.text.Component;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.core.*;
@@ -50,11 +51,23 @@ final class Terminal implements Appender {
         );
         ProxiedConsoleCommandSender sender = new ProxiedConsoleCommandSender(main.getServer().getConsoleSender());
         main.onSwitchPage(main, "console", client -> client.emit("console:logs", queue))
-                .onConnected(main, client -> client.onWithAck("console:complete", Utils::complete)
+                .onConnected(main, client -> {
+                    if (!client.hasPermission("terminal")) return; // secondary tokens: no console access
+                    client.onWithAck("console:complete", Utils::complete)
                         .onWithAck("console:run", args -> {
                             String command = (String) args[0];
                             return Utils.sync(() -> {
                                 main.getLogger().info("NekoMaid issued server command: /" + command);
+                                // Detect op/deop issued from the console (panel Terminal) so the
+                                // player's token is created/revoked like in-game /op.
+                                String[] parts = command.trim().split("\\s+");
+                                if (parts.length >= 2) {
+                                    String c = parts[0].toLowerCase(java.util.Locale.ROOT);
+                                    if (c.equals("op") || c.equals("minecraft:op")
+                                            || c.equals("deop") || c.equals("minecraft:deop")) {
+                                        main.onOpStateMaybeChanged(parts[1]);
+                                    }
+                                }
                                 try {
                                     return main.getServer().dispatchCommand(sender, command);
                                 } catch (Throwable e) {
@@ -62,7 +75,8 @@ final class Terminal implements Appender {
                                     return false;
                                 }
                             });
-                        }));
+                        });
+        });
         ((Logger) LogManager.getRootLogger()).addAppender(this);
     }
 
@@ -183,6 +197,11 @@ final class Terminal implements Appender {
         @Override
         public @NotNull String getName() {
             return o.getName();
+        }
+
+        @Override
+        public @NotNull Component name() {
+            return o.name();
         }
 
         @Override

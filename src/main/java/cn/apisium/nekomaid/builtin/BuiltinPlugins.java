@@ -31,4 +31,6 @@ public final class BuiltinPlugins {
         if (scheduler != null) scheduler.stop();
         if (profiler != null) profiler.stop();
     }
+
+    public FilesManager getFilesManager() { return files; }
 }

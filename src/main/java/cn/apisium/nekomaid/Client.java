@@ -10,13 +10,23 @@ import org.jetbrains.annotations.Nullable;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.*;
 
 @SuppressWarnings({"unused", "UnusedReturnValue"})
 public final class Client {
     private final String plugin;
     public final SocketIoSocket client;
+    /** True for the primary (config token) client; secondary/temporary tokens are restricted. */
+    public boolean primary = false;
+    /** Feature permissions granted to a secondary token; ignored for primary. */
+    private Set<String> permissions = new HashSet<>();
     private final HashSet<String> events = new HashSet<>();
+
+    /** Whether this client may use the given feature (e.g. "terminal", "files"). Primary always passes. */
+    public boolean hasPermission(String feature) { return primary || permissions.contains(feature); }
+
+    public void setPermissions(java.util.Collection<String> perms) { this.permissions = new HashSet<>(perms); }
 
     private Client(Plugin plugin, SocketIoSocket client) {
         this(plugin.getName(), client);

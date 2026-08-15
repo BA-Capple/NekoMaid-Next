@@ -5,20 +5,14 @@ import com.alibaba.fastjson2.JSON;
 import com.destroystokyo.paper.event.server.AsyncTabCompleteEvent;
 import com.google.common.collect.ImmutableList;
 import com.google.common.io.Resources;
-import com.google.gson.Gson;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
+import io.papermc.paper.ServerBuildInfo;
 import io.papermc.paper.util.StacktraceDeobfuscator;
-import net.md_5.bungee.api.chat.ClickEvent;
-import net.md_5.bungee.api.chat.TextComponent;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.event.ClickEvent;
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.OfflinePlayer;
-import org.bukkit.Server;
-import org.bukkit.command.CommandMap;
 import org.bukkit.command.CommandSender;
-import org.bukkit.command.defaults.VersionCommand;
 import org.bukkit.event.server.TabCompleteEvent;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -28,9 +22,7 @@ import org.json.JSONObject;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.lang.reflect.Field;
 import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
@@ -40,32 +32,15 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
-import java.util.stream.StreamSupport;
 
 @SuppressWarnings("deprecation")
 public final class Utils {
-    private static Class<?> paperVersionFetcherClass;
-    private static String commitId, versionBranch = "master";
-    private static final String versionInfo;
-    private static CommandMap commandMap;
-    private static boolean isTuinity, hasAsyncTabComplete, canGetLastLogin, canGetAverageTickTime,
-            canGetTPS, canDeobfuscate;
-    private static Object server;
-    private static Field recentTps, mspt;
-    private static Method getThread;
+    private static boolean hasAsyncTabComplete, canDeobfuscate;
     private static final String JSON_OBJECT = "\ud83c\udf7a";
     public static final boolean IS_PAPER;
     public static final Method classLoaderGetName;
 
     static {
-        try {
-            Class.forName("com.tuinity.tuinity.config.TuinityConfig");
-            isTuinity = true;
-        } catch (Throwable ignored) { }
-        try {
-            Class.forName("com.tuinity.tuinity.config.TuinityConfig");
-            isTuinity = true;
-        } catch (Throwable ignored) { }
         boolean isPaper = false;
         try {
             Class.forName("com.destroystokyo.paper.event.server.AsyncTabCompleteEvent");
@@ -74,96 +49,35 @@ public final class Utils {
         } catch (Throwable ignored) { }
         IS_PAPER = isPaper;
         try {
-            OfflinePlayer.class.getMethod("getLastLogin");
-            canGetLastLogin = true;
-        } catch (Throwable ignored) { }
-        try {
-            Bukkit.class.getMethod("getAverageTickTime");
-            canGetAverageTickTime = true;
-        } catch (Throwable ignored) { }
-        try {
-            Bukkit.class.getMethod("getTPS");
-            canGetTPS = true;
-        } catch (Throwable ignored) { }
-        try {
-            Bukkit.class.getMethod("getTPS");
-            canGetTPS = true;
-        } catch (Throwable ignored) { }
-        try {
             Class.forName("io.papermc.paper.util.StacktraceDeobfuscator");
             canDeobfuscate = true;
         } catch (Throwable ignored) { }
-        try {
-            paperVersionFetcherClass = Class.forName("com.destroystokyo.paper.PaperVersionFetcher");
-        } catch (Throwable ignored) {}
         Method classLoaderGetName1 = null;
         try {
             // noinspection JavaReflectionMemberAccess
             classLoaderGetName1 = ClassLoader.class.getMethod("getName");
         } catch (Throwable ignored) { }
         classLoaderGetName = classLoaderGetName1;
-        try {
-            Server obcServer = Bukkit.getServer();
-            Class<?> obc = Bukkit.getServer().getClass();
-            Class<?> nms = obc.getMethod("getServer").invoke(obcServer).getClass();
-            server = nms.getMethod("getServer").invoke(null);
-            try { recentTps = nms.getField("recentTps"); } catch (Throwable ignored) { }
-            try {
-                for (Field it : nms.getFields()) {
-                    int f = it.getModifiers();
-                    if (it.getType() == long[].class && it.getName().length() == 1 && Modifier.isPublic(f) &&
-                            Modifier.isFinal(f) && !Modifier.isStatic(f) && it.isAccessible()) {
-                        long[] arr = (long[]) it.get(server);
-                        if (arr.length == 100) mspt = it;
-                    }
-                }
-            } catch (Throwable ignored) { }
-            try { getThread = nms.getMethod("getThread"); } catch (Throwable ignored) { }
-            try {
-                Field field = obc.getDeclaredField("commandMap");
-                field.setAccessible(true);
-                commandMap = (CommandMap) field.get(obcServer);
-            } catch (Throwable ignored) { }
-        } catch (Throwable e) {
-            e.printStackTrace();
-        }
-        versionInfo = Bukkit.getVersion().substring("git-Paper-".length())
-                .split("[-\\s]")[0].replace("\"", "");
-        if (versionInfo.length() != 7) try {
-            @SuppressWarnings("unchecked") Map<String, String> map = (Map<String, String>)
-                    Class.forName("io.papermc.paper.util.JarManifests").getField("MANIFEST_MAP").get(null);
-            versionBranch = map.get("Git-Branch");
-            commitId = map.get("Git-Commit");
-        } catch (Throwable ignored) { }
     }
 
     public static boolean hasNBTAPI() { return Bukkit.getPluginManager().getPlugin("NBTAPI") != null; }
 
     public static double getTPS() {
         try {
-            if (canGetTPS) return Bukkit.getTPS()[0];
-            return ((double[]) recentTps.get(server))[0];
+            return Bukkit.getTPS()[0];
         } catch (Throwable ignored) { }
         return -1;
     }
 
     public static double getMSPT() {
         try {
-            if (canGetAverageTickTime) return Bukkit.getAverageTickTime();
-            long[] arr = (long[]) mspt.get(server);
-            if (arr.length == 100) {
-                long i = 0L;
-                for (final long l : arr) i += l;
-                return i / 100.0 * 1.0E-6D;
-            }
+            return Bukkit.getAverageTickTime();
         } catch (Throwable ignored) { }
         return -1;
     }
 
-    @SuppressWarnings("deprecation")
     public static long getPlayerLastPlayTime(@NotNull OfflinePlayer p) {
-        if (canGetLastLogin) return p.getLastLogin();
-        return p.getLastPlayed();
+        return p.getLastLogin();
     }
 
     @Nullable
@@ -192,7 +106,7 @@ public final class Utils {
                 }
             }
             return sync(() -> {
-                List<String> offers = commandMap.tabComplete(Bukkit.getConsoleSender(), buffer);
+                List<String> offers = Bukkit.getCommandMap().tabComplete(Bukkit.getConsoleSender(), buffer);
                 TabCompleteEvent tabEvent = new TabCompleteEvent(Bukkit.getConsoleSender(), buffer, (offers == null)
                         ? Collections.emptyList() : offers);
                 Bukkit.getPluginManager().callEvent(tabEvent);
@@ -231,89 +145,18 @@ public final class Utils {
 
     public static int checkUpdate() {
         try {
-            int catServer = checkCatServerUpdate();
-            if (catServer != -2) return catServer;
-            if (paperVersionFetcherClass != null) {
-                Class<?> clazz = Bukkit.getUnsafe().getVersionFetcher().getClass();
-                if (clazz == paperVersionFetcherClass) {
-                    try {
-                        if (isTuinity) return fetchDistanceFromGitHub("Tuinity/Tuinity", versionBranch, commitId);
-                        else try {
-                            return fetchDistanceFromSiteApi(Integer.parseInt(versionInfo), Bukkit.getMinecraftVersion());
-                        } catch (Throwable ignored) {
-                            return fetchDistanceFromGitHub("PaperMC/Paper", versionBranch, commitId);
-                        }
-                    } catch (Throwable ignored) { }
-                }
-            } else {
-                String version = Bukkit.getVersion();
-                String[] parts = version.substring(0, version.indexOf(' ')).split("-");
-                if (parts.length != 4 && parts.length != 3) return -1;
-                Method getDistance = VersionCommand.class.getDeclaredMethod("getDistance", String.class, String.class);
-                getDistance.setAccessible(true);
-                return parts.length == 4 ?
-                        (int) getDistance.invoke(null, "spigot", parts[2]) +
-                                (int) getDistance.invoke(null, "craftbukkit", parts[3])
-                        : (int) getDistance.invoke(null, "craftbukkit", parts[2]);
-            }
-        } catch (Throwable ignored) { }
-        return -1;
-    }
-
-    @SuppressWarnings("SameParameterValue")
-    private static int fetchDistanceFromGitHub(String repo, String branch, String hash) {
-        try {
-            HttpURLConnection connection = (HttpURLConnection)(new URL("https://api.github.com/repos/" + repo +
-                    "/compare/" + branch + "..." + hash)).openConnection();
-            connection.connect();
-            if (connection.getResponseCode() == 404)
-                return -2;
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream(),
+            OptionalInt current = ServerBuildInfo.buildInfo().buildNumber();
+            if (current.isEmpty()) return -1;
+            String version = ServerBuildInfo.buildInfo().minecraftVersionId();
+            URL url = new URL("https://fill.papermc.io/v3/projects/paper/versions/" + version + "/builds/latest");
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(url.openStream(),
                     StandardCharsets.UTF_8))) {
-                JsonObject obj = new Gson().fromJson(reader, JsonObject.class);
-                String status = obj.get("status").getAsString();
-                switch (status) {
-                    case "identical": return 0;
-                    case "behind": return obj.get("behind_by").getAsInt();
-                }
+                JSONObject json = new JSONObject(reader.lines().collect(Collectors.joining()));
+                int latest = json.getInt("id");
+                return latest - current.getAsInt();
             }
         } catch (Throwable ignored) { }
         return -1;
-    }
-
-    @SuppressWarnings({"UnstableApiUsage", "OptionalGetWithoutIsPresent"})
-    private static int fetchDistanceFromSiteApi(int jenkinsBuild, @Nullable String siteApiVersion) throws Throwable {
-        if (siteApiVersion == null) return -1;
-        try (BufferedReader reader = Resources.asCharSource(new URL("https://papermc.io/api/v2/projects/paper/versions/" +
-                siteApiVersion), StandardCharsets.UTF_8).openBufferedStream()) {
-            JsonObject json = new Gson().fromJson(reader, JsonObject.class);
-            JsonArray builds = json.getAsJsonArray("builds");
-            int latest = StreamSupport.stream(builds.spliterator(), false)
-                    .mapToInt(JsonElement::getAsInt).max().getAsInt();
-            return latest - jenkinsBuild;
-        }
-    }
-
-    @SuppressWarnings("UnstableApiUsage")
-    private static int checkCatServerUpdate() {
-        try {
-            Package pkg = Class.forName("catserver.server.CatServer").getPackage();
-            String implementationVersion = pkg.getImplementationVersion();
-            if ("Luohuayu".equals(pkg.getImplementationVendor()) && implementationVersion != null) {
-                String[] split = implementationVersion.split("-");
-                if (split.length == 4) {
-                    try (BufferedReader reader = Resources.asCharSource(
-                            new URL("https://catserver.moe/api/version/?v=universal"), StandardCharsets.UTF_8)
-                            .openBufferedStream()) {
-                        JsonObject json = new Gson().fromJson(reader, JsonObject.class);
-                        return json.get("version").getAsString().equals(split[3]) ? 0 : 1;
-                    }
-                }
-            }
-            return -1;
-        } catch (Throwable ignored) {
-            return -2;
-        }
     }
 
     public static boolean deletePath(Path p) {
@@ -378,10 +221,8 @@ public final class Utils {
         }
     }
 
-    public static TextComponent getCommandComponent(String cmd) {
-        TextComponent text = new TextComponent(cmd);
-        text.setClickEvent(new ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, cmd));
-        return text;
+    public static Component getCommandComponent(String cmd) {
+        return Component.text(cmd).clickEvent(ClickEvent.suggestCommand(cmd));
     }
 
     public static <T> T sync(Callable<T> fn) {
@@ -405,23 +246,16 @@ public final class Utils {
     }
 
     public static Thread getMinecraftServerThread() {
-        try {
-            return getThread == null ? null : (Thread) getThread.invoke(server);
-        } catch (Throwable e) {
-            e.printStackTrace();
-            return null;
+        for (Thread t : Thread.getAllStackTraces().keySet()) {
+            if ("Server thread".equals(t.getName())) return t;
         }
+        return null;
     }
 
     @SuppressWarnings("ProtectedMemberInFinalClass")
     protected static Timings initTimings() {
-        try {
-            return new TimingsV2();
-        } catch (Throwable ignored) {
-            try {
-                return new TimingsV1();
-            } catch (Throwable ignored1) {  }
-        }
+        // Timings (co.aikar.timings / CustomTimingsHandler) was deprecated and its internals
+        // removed in Paper 26.2; the profiler degrades gracefully with a null instance.
         return null;
     }
 

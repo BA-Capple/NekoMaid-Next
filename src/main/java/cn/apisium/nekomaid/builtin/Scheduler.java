@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
 
 final class Scheduler {
     private ConfigurationScheduler scheduler;
@@ -31,8 +32,10 @@ final class Scheduler {
             tasks = new ArrayList<>();
         }
         refresh();
-        main.onConnected(main, client -> client.onWithAck("scheduler:fetch", args -> tasks)
+        main.onConnected(main, client -> client.onWithAck("scheduler:fetch", args ->
+                client.hasPermission("scheduler") ? tasks : Collections.emptyList())
                 .onWithAck("scheduler:run", args -> {
+                    if (!client.hasPermission("terminal")) return false; // admin-level action
                     try {
                         runTask(tasks.get((int) args[0]));
                         return true;
@@ -41,6 +44,7 @@ final class Scheduler {
                     }
                 })
                 .onWithAck("scheduler:update", args -> {
+                    if (!client.hasPermission("terminal")) return false; // admin-level action
                     try {
                         String json = (String) args[0];
                         tasks = new ArrayList<>(JSONArray.parseArray(json).toList(Task.class));

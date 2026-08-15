@@ -106,6 +106,7 @@ final class Dashboard implements Listener {
                 checkUpdate();
             }
         }).onConnected(main, client -> client.onWithAck("dashboard:kick", args -> {
+            if (!client.hasPermission("players")) return false; // player management is gated
             Player p = main.getServer().getPlayerExact((String) args[0]);
             if (p == null) return false;
             main.getServer().getScheduler().runTask(main, () -> p.kickPlayer((String) args[1]));

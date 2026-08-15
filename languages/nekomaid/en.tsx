@@ -10,6 +10,10 @@ const lang: Language = {
   noData: 'No Data',
   pluginUpdate: 'An update founded, it is recommended to use the newer version!',
   wrongToken: 'Incorrect token!',
+  twoFactorTitle: 'Two-factor authentication',
+  twoFactorPrompt: 'Enter the six-digit code shown in your authenticator app.',
+  twoFactorCode: 'Authentication code',
+  twoFactorInvalid: 'Enter a six-digit code.',
   reconnect: 'Reconnecting...',
   disconnected: 'Disconnected!',
   failedToConnect: 'Failed to connect!',
@@ -62,6 +66,25 @@ const lang: Language = {
     minute: 'm ',
     second: 's'
   },
+  tokenManage: {
+    title: 'Token Management',
+    description: 'Manage secondary tokens and their panel permissions (primary token only).',
+    selectHint: 'Select a token from the list',
+    permission: 'Permissions',
+    allowNo2fa: 'Allow without two-factor authentication (do not force 2fa on this token)',
+    allowNo2faWarning: 'Warning: disabling 2fa significantly weakens security — the token alone grants access. If this token also has terminal/files/plugins permissions, a leaked token means full server compromise.'
+  },
+  twoFactorSetup: {
+    title: 'Set up two-factor authentication',
+    description: 'Scan the QR code or enter the secret in your authenticator app, then enter a code to finish.',
+    secretLabel: 'Secret',
+    hint: 'Scan with Google/Microsoft Authenticator, 1Password, etc., or type the secret above. A 6-digit code will be required on every login.',
+    verify: 'Verify & enable'
+  },
+  noPermission: 'You do not have permission to perform this action.',
+  actionSave: 'Save',
+  actionRunning: 'Saving...',
+  back: 'Back',
   config: {
     title: 'Configuration',
     args: 'VM Options',

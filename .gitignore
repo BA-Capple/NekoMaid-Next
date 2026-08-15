@@ -1,6 +1,7 @@
 # User-specific stuff
 .idea/
 .gradle
+.gradle-user
 build
 dist
 icons.json
@@ -127,3 +128,9 @@ buildNumber.properties
 
 # Common working directory
 run/
+
+# 部署/运维文档（含真实服务器拓扑/凭据，禁止入库，仅本地留存）
+docs/
+
+# 本地克隆的第三方图标源码（vscode-material-icon-theme，生成 icons/material 用）
+vscode-material-icon-theme/

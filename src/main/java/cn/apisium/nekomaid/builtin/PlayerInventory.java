@@ -24,15 +24,21 @@ final class PlayerInventory {
     public PlayerInventory(NekoMaid main) {
         if (main.getServer().getPluginManager().getPlugin("OpenInv") == null) {
             Plugin plugin = main.getServer().getPluginManager().getPlugin("InvSeePlusPlus");
-            if (plugin != null && ((InvseePlusPlus) plugin).offlinePlayerSupport()) {
-                hasInvSee = true;
-                main.GLOBAL_DATA.put("hasOfflineInventorySupport", true);
+            try {
+                if (plugin != null && ((InvseePlusPlus) plugin).offlinePlayerSupport()) {
+                    hasInvSee = true;
+                    main.GLOBAL_DATA.put("hasOfflineInventorySupport", true);
+                }
+            } catch (Throwable e) {
+                if (main.isDebug()) e.printStackTrace();
             }
         } else {
             hasOpenInv = true;
             main.GLOBAL_DATA.put("hasOfflineInventorySupport", true);
         }
-        main.onConnected(main, client -> client.onWithAck("inventory:fetchInv", args -> {
+        main.onConnected(main, client -> {
+            if (!client.hasPermission("inventory")) return; // secondary tokens: no inventory editing
+            client.onWithAck("inventory:fetchInv", args -> {
             try (FakePlayer player = getFakePlayer((String) args[0])) {
                 if (player != null) return getInventoryItems(player.getInventory());
             } catch (Throwable e) {
@@ -64,7 +70,8 @@ final class PlayerInventory {
                 e.printStackTrace();
                 return false;
             }
-        }));
+        });
+    });
     }
 
     @Nullable

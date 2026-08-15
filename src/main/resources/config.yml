@@ -1,7 +1,17 @@
-token: ~
+# Tokens. The entry with "primary: true" is the master token (full access, manages other
+# tokens). Secondary entries are restricted by their "permissions" list. Every token has its
+# own TOTP "secret"; a connection must present the matching OTP or it is rejected.
+# Set "allowNo2fa: true" on a secondary token to let it connect without 2fa (default forces 2fa).
+# Manage via: /nm token create|list|revoke (secondary), /nm 2fa setup|enable|disable (primary).
+tokens: []
 
 hostname: 127.0.0.1
 customAddress: ''
+port: 12334
+# Directory (relative to the plugin data folder, or an absolute path) served for static web resources.
+static-path: static
+# Enable gzip compression for HTTP responses.
+gzip: true
 
 skin-url: ''
 head-url: ''

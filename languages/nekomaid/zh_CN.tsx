@@ -10,6 +10,10 @@ export default {
   noData: '暂无数据',
   pluginUpdate: '发现插件更新! 推荐立即更新!',
   wrongToken: '密钥错误',
+  twoFactorTitle: '两步验证',
+  twoFactorPrompt: '请输入验证器应用中显示的 6 位验证码。',
+  twoFactorCode: '验证码',
+  twoFactorInvalid: '请输入 6 位数字验证码。',
   reconnect: '正在尝试重新连接...',
   disconnected: '连接已断开!',
   failedToConnect: '无法连接到服务器!',
@@ -62,6 +66,25 @@ export default {
     minute: '分',
     second: '秒'
   },
+  tokenManage: {
+    title: '令牌管理',
+    description: '管理副令牌及其面板权限（仅主令牌可用）。',
+    selectHint: '从左侧选择要管理的令牌',
+    permission: '权限',
+    allowNo2fa: '允许免两步验证（不强制该令牌配置 2fa）',
+    allowNo2faWarning: '警告：免两步验证会显著降低安全性，仅凭 token 即可登录。若该令牌同时拥有终端/文件/插件等高危权限，泄露 token 即等于服务器完全沦陷。'
+  },
+  twoFactorSetup: {
+    title: '设置两步验证',
+    description: '首次使用前，请用验证器应用扫码或输入密钥，然后输入验证码完成绑定。',
+    secretLabel: '密钥',
+    hint: '在 Google/Microsoft Authenticator、1Password 等应用中扫码，或手动输入上面的密钥。绑定后每次登录都需输入验证器中的 6 位码。',
+    verify: '验证并启用'
+  },
+  noPermission: '无权限执行此操作。',
+  actionSave: '保存',
+  actionRunning: '保存中...',
+  back: '返回',
   config: {
     title: '设置',
     args: '虚拟机参数',

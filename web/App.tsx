@@ -43,12 +43,17 @@ import toast, { Snackbars, failed } from './toast'
 import dialog, { DialogWrapper } from './dialog'
 import Plugin, { GlobalInfo, Page } from './Plugin'
 import initPages, { onGlobalDataReceived } from './pages/index'
+import TwoFactorSetup from './components/TwoFactorSetup'
 
 export interface ServerRecord { address: string, time: number, icon?: string }
 
 export let pages: Record<string, Page[]> = { }
 
 export let update: React.Dispatch<number>
+
+/** The active socket.io instance, exposed for the two-factor setup flow. */
+let currentSocket: any = null
+export const getSocket = () => currentSocket
 
 const LanguageSwitch: React.FC = React.memo(() => {
   const [anchorEl, setAnchorEl] = React.useState<HTMLElement | undefined>()
@@ -79,13 +84,21 @@ const App: React.FC<{ darkMode: boolean, setDarkMode: (a: boolean) => void }> = 
   const [globalItemsOpen, setGlobalItemsOpen] = useState(false)
   const [globalData, setGlobalData] = useState<GlobalInfo>({ } as any)
   const [drawerWidth, setDrawerWidth] = useState(240)
+  const [otp, setOtp] = useState('')
+  const [twoFactorRequired, setTwoFactorRequired] = useState(false)
+  const [setup, setSetup] = useState<{ uri: string, secret: string } | null>(null)
   const updateF = useState(0)[1]
   const create = useMemo(() => {
-    const io = socketIO(origin!, { path: pathname!, auth: { token } })
+    let awaitingTwoFactor = false
+    const storedSession = sessionStorage.getItem('NekoMaid:session') || ''
+    const io = socketIO(origin!, { path: pathname!, auth: { token, otp, session: storedSession } })
+    currentSocket = io
     const map: Record<string, Plugin> = { }
     const fn = (window as any).__NekoMaidAPICreate = (name: string) => map[name] || (map[name] = new Plugin(io, name))
     const nekoMaid = pluginRef.current = fn('NekoMaid')
-    io.on('globalData', (data: GlobalInfo) => {
+    io.on('session', (sessionId: string) => {
+      sessionStorage.setItem('NekoMaid:session', sessionId)
+    }).on('globalData', (data: GlobalInfo) => {
       const his: ServerRecord[] = JSON.parse(localStorage.getItem('NekoMaid:servers') || '[]')
       const curAddress = address!.replace('http://', '') + '?' + token
       let cur = his.find(it => it.address === curAddress)
@@ -103,6 +116,13 @@ const App: React.FC<{ darkMode: boolean, setDarkMode: (a: boolean) => void }> = 
       onGlobalDataReceived(nekoMaid, data)
       update(Math.random())
       if (process.env.NODE_ENV !== 'development' && data.pluginVersion !== version) toast(lang.pluginUpdate, 'warning')
+    }).on('twoFactorRequired', () => {
+      awaitingTwoFactor = true
+      io.close()
+      setTwoFactorRequired(true)
+    }).on('twoFactorSetup', (uri: string, secret: string) => {
+      // First-visit setup for a secondary token without 2fa: show the setup screen only.
+      setSetup({ uri, secret })
     }).on('!', () => {
       io.close()
       dialog({ content: lang.wrongToken, cancelButton: false })
@@ -111,10 +131,30 @@ const App: React.FC<{ darkMode: boolean, setDarkMode: (a: boolean) => void }> = 
     }).on('reconnect', () => {
       toast(lang.reconnect)
       setTimeout(() => location.reload(), 5000)
-    }).on('disconnect', () => failed(lang.disconnected)).on('connect_error', () => failed(lang.failedToConnect))
+    }).on('disconnect', () => { if (!awaitingTwoFactor) failed(lang.disconnected) })
+      .on('connect_error', () => failed(lang.failedToConnect))
     return fn
-  }, [])
+  }, [otp])
   useEffect(() => { if (!loc.pathname || loc.pathname === '/') navigate('/NekoMaid/dashboard') }, [loc.pathname])
+  useEffect(() => {
+    if (!twoFactorRequired) return
+    dialog({
+      title: lang.twoFactorTitle,
+      content: lang.twoFactorPrompt,
+      cancelButton: false,
+      input: {
+        label: lang.twoFactorCode,
+        inputMode: 'numeric',
+        validator: value => /^\d{6}$/.test(value) || lang.twoFactorInvalid
+      }
+    }).then(code => {
+      setTwoFactorRequired(false)
+      if (code == null) {
+        // eslint-disable-next-line no-return-assign
+        location.search = location.pathname = location.hash = ''
+      } else setOtp(code)
+    })
+  }, [twoFactorRequired])
   useEffect(() => {
     update = updateF
     return () => { update = undefined as any }
@@ -126,6 +166,8 @@ const App: React.FC<{ darkMode: boolean, setDarkMode: (a: boolean) => void }> = 
   }
 
   const isExpand = drawerWidth === 240
+
+  if (setup) return <TwoFactorSetup uri={setup.uri} secret={setup.secret} />
 
   const routes: JSX.Element[] = []
   const mapToItem = (name: string, it: Page) => {

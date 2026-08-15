@@ -41,7 +41,9 @@ final class Vault {
             if (permission.hasGroupSupport()) main.GLOBAL_DATA.put("hasVaultGroups", true);
         }
         if (chat != null && chat.isEnabled()) main.GLOBAL_DATA.put("hasVaultChat", true);
-        main.onConnected(main, client -> client.onWithMultiArgsAck("vault:fetch", args -> {
+        main.onConnected(main, client -> {
+            if (!client.hasPermission("vault")) return; // secondary tokens: no economy/permission editing
+            client.onWithMultiArgsAck("vault:fetch", args -> {
             try {
                 OfflinePlayer[] arr = main.getServer().getOfflinePlayers();
                 Stream<OfflinePlayer> stream = Arrays.stream(arr).filter(it -> it.getName() != null);
@@ -142,6 +144,7 @@ final class Vault {
             }
             main.getServer().getPluginManager().getDefaultPermissions(true).forEach(it -> set.add(it.getName()));
             return set;
-        }));
+        });
+        });
     }
 }
