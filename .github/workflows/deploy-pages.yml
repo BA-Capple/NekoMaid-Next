@@ -15,6 +15,7 @@ on:
       - 'index.html'
       - 'icons.json'
       - 'minecraftIcons.json'
+      - 'scripts/**'
       - '.github/workflows/deploy-pages.yml'
   workflow_dispatch:
 

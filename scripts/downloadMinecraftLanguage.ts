@@ -6,7 +6,9 @@ if (!existsSync('languages/minecraft')) mkdirSync('languages/minecraft')
 // PaperMC 26.2 的 assetIndex 中没有 en_us.json（en_us 内置进 jar），用 en_gb 代替（GUI 词条一致）。
 const supportLanguages = ['zh_cn', 'en_gb']
 fetchVersion().then(body => get<{ objects: Record<string, { hash: string }> }>(body.assetIndex.url).then(body => supportLanguages.forEach(it => {
-  const { hash } = body.objects[`minecraft/lang/${it}.json`]
+  const entry = body.objects[`minecraft/lang/${it}.json`]
+  if (!entry) return exit(`Missing minecraft/lang/${it}.json in assetIndex`)
+  const { hash } = entry
   require('nugget')(`https://resources.download.minecraft.net/${hash.slice(0, 2)}/${hash}`, { target: `languages/minecraft/${it}.json` }, err => {
     if (err) exit(err)
     if (it === 'en_gb' && !existsSync('languages/minecraft/en_us.json')) {

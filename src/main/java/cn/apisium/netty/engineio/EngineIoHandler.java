@@ -68,7 +68,7 @@ public class EngineIoHandler extends SimpleChannelInboundHandler<Object> {
             }
             if (HttpUtil.is100ContinueExpected(msg)) ctx.channel().writeAndFlush(new DefaultHttpResponse(HTTP_1_1, HttpResponseStatus.CONTINUE));
             DefaultFullHttpResponse response = new DefaultFullHttpResponse(HTTP_1_1, HttpResponseStatus.OK);
-            // CORS for the cross-origin web panel (https://maid.neko-craft.com) is handled by
+            // CORS for the cross-origin web panel (https://BA-Capple.github.io/NekoMaid-Next) is handled by
             // engine.io-server itself (EngineIoServerOptions default allows all origins), which
             // emits Access-Control-Allow-* on every polling response. Do NOT add our own here:
             // it would duplicate the headers and the browser rejects multiple ACAO values.

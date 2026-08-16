@@ -22,7 +22,10 @@ jobs:
 
       - name: Set plugin version (from release tag)
         if: github.event_name == 'release'
-        run: version='${{ github.ref }}' && sed -i "s/0\.0\.0/${version:10}/" src/main/resources/plugin.yml
+        run: |
+          version='${{ github.ref_name }}'
+          version=${version#v}
+          sed -i "s/0\.0\.0/${version}/" src/main/resources/plugin.yml
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
