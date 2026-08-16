@@ -931,7 +931,7 @@ public final class NekoMaid extends JavaPlugin implements Listener {
         String url = getConnectHostname(port, token);
         try { url = URLEncoder.encode(url, "UTF-8"); } catch (Throwable ignored) { }
         return custom.isEmpty()
-                ? "http://maid.neko-craft.com/?" + url
+                ? "https://BA-Capple.github.io/NekoMaid-Next/?" + url
                 : custom.replace("{token}", token).replace("{hostname}", url);
     }
 

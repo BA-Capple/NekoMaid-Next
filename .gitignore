@@ -4,17 +4,17 @@
 .gradle-user
 build
 dist
-icons.json
 public
-minecraftIcons.json
-icons/minecraft
-languages/minecraft
 minecraftIcons
 client.jar
 parcel-bundle-reports
 .yarn
 *.pnp*
 /stats.html
+
+# Mojang 版权资源（禁止入库；icons.json/minecraftIcons.json 为构建必需，已提交）
+icons/minecraft
+languages/minecraft
 
 node_modules
 .parcel-cache

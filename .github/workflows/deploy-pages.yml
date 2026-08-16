@@ -1,0 +1,69 @@
+# 前端面板部署到 GitHub Pages（官方 actions/upload-pages-artifact + actions/deploy-pages）
+# 前提：仓库 Settings → Pages → Source 选择 "GitHub Actions"（不是 Deploy from a branch）。
+# 触发：master 上前端相关文件变更，或手动 workflow_dispatch。
+name: Deploy Frontend to GitHub Pages
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'web/**'
+      - 'languages/nekomaid/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'vite.config.ts'
+      - 'index.html'
+      - 'icons.json'
+      - 'minecraftIcons.json'
+      - '.github/workflows/deploy-pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Download Minecraft language files (zh_cn, en_gb -> en_us)
+        run: npm run gen:minecraft:language
+
+      - name: Copy material icons to public
+        run: mkdir -p public/icons && cp -r icons/material public/icons/
+
+      - name: Build frontend (vite)
+        run: npm run build
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

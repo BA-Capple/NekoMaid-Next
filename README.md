@@ -1,4 +1,4 @@
-# NekoMaidRemaster
+# NekoMaid-Next
 
 用网页管理 Minecraft 服务器的 Paper 插件（NekoMaid 的重构分支）。
 
