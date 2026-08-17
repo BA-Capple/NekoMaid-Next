@@ -8,6 +8,7 @@
 - **兼容 PaperMC 26.2**：移除 NMS 反射，适配新 API
 - **多 token + 每 token 独立 TOTP 二步验证**：`config.yml` 的 `tokens` 列表，主 token 全权限，副 token 按白名单权限受限
 - **前端独立部署**：web 面板由 Vite 构建为静态站点，可单独托管（或由插件 `static-path` 服务）
+- **版本线**：本分支面向 **Paper 26.2**（最低 Java 25）；Paper 1.21.11（Java 21）版本见 `1.21.11` 分支。
 
 ## Requirements
 
@@ -17,9 +18,8 @@
 ## Usage
 
 1. 构建：`./gradlew shadowJar --no-daemon`，产物为 `build/libs/NekoMaid-1.0-SNAPSHOT.jar`
-2. 将 jar 放入服务器 `plugins` 目录并重启服务器
-3. 编辑 `config.yml`：设置 `hostname`（公网连接地址，**必须带端口**）与 `tokens`
-4. 控制台执行 `/nm`（或 `/nekomaid`）查看管理地址
+2. 部署（nginx TLS 反代、前端托管、令牌与 2fa 配置、验证清单）：**见 [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md)**
+3. 控制台执行 `/nm`（或 `/nekomaid`）查看管理地址
 
 ## Commands
 
