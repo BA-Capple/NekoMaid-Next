@@ -4,7 +4,7 @@ main: cn.apisium.nekomaid.NekoMaid
 description: A plugin can use Web to manage your server.
 author: Shirasawa
 website: https://neko-craft.com
-api-version: '26.2'
+api-version: '1.21.11'
 
 commands:
   nekomaid:

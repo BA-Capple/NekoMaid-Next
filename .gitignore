@@ -129,8 +129,8 @@ buildNumber.properties
 # Common working directory
 run/
 
-# 部署/运维文档（含真实服务器拓扑/凭据，禁止入库，仅本地留存）
-docs/
+# 部署/运维文档（docs/ 已脱敏入库；此处仅忽略本地额外运维笔记）
+docs/*.local.md
 
 # 本地克隆的第三方图标源码（vscode-material-icon-theme，生成 icons/material 用）
 vscode-material-icon-theme/

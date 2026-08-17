@@ -5,21 +5,20 @@
 基于 [NekoMaid](https://github.com/neko-craft/NekoMaid)（AGPL-3.0）重构，主要变化：
 
 - **移除 Uniporter 依赖**：内置独立 Netty HTTP 服务器（`NekoMaidHttpServer`），不再需要任何前置插件
-- **兼容 PaperMC 26.2**：移除 NMS 反射，适配新 API
 - **多 token + 每 token 独立 TOTP 二步验证**：`config.yml` 的 `tokens` 列表，主 token 全权限，副 token 按白名单权限受限
 - **前端独立部署**：web 面板由 Vite 构建为静态站点，可单独托管（或由插件 `static-path` 服务）
+- **版本线**：本分支面向 **Paper 1.21.11**（最低 Java 21）；Paper 26.2（Java 25）版本见默认分支。
 
 ## Requirements
 
-- Paper 26.2+（需 Java 25 运行）
+- Paper 1.21.11（需 Java 21+ 运行）
 - 无必需前置插件；以下为可选集成（`softdepend`）：Vault、NBTAPI、OpenInv、InvSeePlusPlus、PlugMan、PlaceholderAPI、Multiverse-Core
 
 ## Usage
 
 1. 构建：`./gradlew shadowJar --no-daemon`，产物为 `build/libs/NekoMaid-1.0-SNAPSHOT.jar`
-2. 将 jar 放入服务器 `plugins` 目录并重启服务器
-3. 编辑 `config.yml`：设置 `hostname`（公网连接地址，**必须带端口**）与 `tokens`
-4. 控制台执行 `/nm`（或 `/nekomaid`）查看管理地址
+2. 部署（nginx TLS 反代、前端托管、令牌与 2fa 配置、验证清单）：**见 [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md)**
+3. 控制台执行 `/nm`（或 `/nekomaid`）查看管理地址
 
 ## Commands
 
@@ -76,7 +75,7 @@ debug: false               # 调试模式（打印异常栈）
 
 ## For developers
 
-- 后端：Java 25 toolchain（Gradle 自动下载）、shadowJar relocate 依赖至 `cn.apisium.nekomaid.libs.*`
+- 后端：Gradle toolchain 编译（本分支 `options.release = 21`，产物兼容 Java 21 运行时）；shadowJar relocate 依赖至 `cn.apisium.nekomaid.libs.*`
 - 前端：`npm install --legacy-peer-deps` → `npm run build`（产物 `dist/`，`base: './'` 相对路径）
 
 ## Screenshot
