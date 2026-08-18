@@ -17,6 +17,7 @@ skin-url: ''
 head-url: ''
 
 geolite2-eula: false
+geolite2-license-key: ''
 baidu-map-license-key: ''
 
 logger:

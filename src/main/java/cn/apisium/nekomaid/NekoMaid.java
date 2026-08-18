@@ -60,7 +60,7 @@ public final class NekoMaid extends JavaPlugin implements Listener {
     private EngineIoServer engineIoServer;
     private final ConcurrentHashMap<SocketIoSocket, String[]> pages = new ConcurrentHashMap<>();
     private final HashMap<SocketIoSocket, HashMap<String, Client>> clients = new HashMap<>();
-    private final Cache<String, String> tempTokens = CacheBuilder.newBuilder().maximumSize(10)
+    private final Cache<String, Boolean> tempTokens = CacheBuilder.newBuilder().maximumSize(10)
             .expireAfterWrite(60, TimeUnit.MINUTES).build();
     /** Brute-force protection for the OTP check: failed attempts per token, lock-out after a threshold. */
     private final Cache<String, Integer> otpFailures = CacheBuilder.newBuilder().maximumSize(256)
@@ -162,17 +162,17 @@ public final class NekoMaid extends JavaPlugin implements Listener {
                 client.disconnect(false);
                 return;
             }
-            // Resolve the token to its TOTP secret and role. Every token - primary, named
-            // secondary or temporary - MUST pass its own two-factor code to connect.
+            // Resolve the token to its TOTP secret and role. Primary and secondary tokens
+            // MUST pass their own two-factor code to connect (fail-closed); temporary
+            // tokens issued via `nm temp` are intentionally single-factor (no TOTP).
             String secret = null;
             boolean primary = false;
             Map<String, Object> tokenEntry = getTokenEntry(token);
+            boolean isTemp = tokenEntry == null && tempTokens.getIfPresent(token) != null;
             if (tokenEntry != null) {
                 Object s = tokenEntry.get("secret");
                 secret = s instanceof String ? (String) s : null;
                 primary = Boolean.TRUE.equals(tokenEntry.get("primary"));
-            } else {
-                secret = tempTokens.getIfPresent(token);
             }
             // Brute-force lockout: reject while this token is temporarily locked.
             String lockKey = token + ":" + remoteIpOf(client);
@@ -186,6 +186,9 @@ public final class NekoMaid extends JavaPlugin implements Listener {
             if (sessionAuth) {
                 // Valid session credential (bound to IP): skip the OTP/setup path entirely.
                 // no-op — fall through to issue a fresh session below.
+            } else if (isTemp) {
+                // Temporary tokens (nm temp) are single-factor by design: no TOTP required.
+                // no-op — fall through to the normal connection path below.
             } else if (hasSecret) {
                 if (!Totp.isValid(secret, connectData.optString("otp", ""))) {
                     Integer prev = otpFailures.getIfPresent(lockKey);
@@ -416,21 +419,10 @@ public final class NekoMaid extends JavaPlugin implements Listener {
         });
         registerCommand(this, "temp", (sender, command, label, args) -> {
             String token = UUID.randomUUID().toString();
-            String secret = Totp.generateSecret();
-            tempTokens.put(token, secret);
+            tempTokens.put(token, Boolean.TRUE);
             String url = getConnectUrl(token);
             sender.sendMessage(URL_MESSAGE + url);
-            sender.sendMessage(ChatColor.YELLOW + "[NekoMaid] Temporary 2FA secret (enter in your authenticator"
-                    + " app, or scan the QR file):");
-            sender.sendMessage(ChatColor.AQUA + secret);
-            try {
-                java.nio.file.Path qr = getDataFolder().toPath().resolve("temp-token-qr.png");
-                java.nio.file.Files.write(qr, Totp.generateQrPng(getTwoFactorOtpAuthUri(secret), 300));
-                            try { java.nio.file.Files.setPosixFilePermissions(qr,
-                                    java.util.EnumSet.of(java.nio.file.attribute.PosixFilePermission.OWNER_READ,
-                                            java.nio.file.attribute.PosixFilePermission.OWNER_WRITE)); } catch (UnsupportedOperationException ignored) { }
-                sender.sendMessage(ChatColor.YELLOW + "[NekoMaid] QR saved to: " + qr);
-            } catch (Throwable ignored) { }
+            sender.sendMessage(ChatColor.YELLOW + "[NekoMaid] Temporary token valid for 60 minutes, no two-factor required.");
             return true;
         });
         registerCommand(this, "invalidate", (sender, command, label, args) -> {

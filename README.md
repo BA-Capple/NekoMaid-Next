@@ -24,7 +24,7 @@
 ## Commands
 
 - **/nekomaid help**: 帮助。
-- **/nekomaid temp**: 生成临时连接地址（15 分钟过期，独立 TOTP secret + 二维码）。
+- **/nekomaid temp**: 生成临时连接地址（60 分钟有效，**无需两步验证**）。
 - **/nekomaid reload**: 重载配置。
 - **/nekomaid diagnostic**: 诊断 `hostname` 配置。
 - **/nekomaid invalidate**: 撤销所有已生成的临时地址。
@@ -70,7 +70,7 @@ debug: false               # 调试模式（打印异常栈）
 
 ## Security
 
-- 所有 token 强制 2fa（fail-closed）：secret 为空或 OTP 错误一律拒绝；OTP 暴力尝试 5 次锁 5 分钟。
+- 主/副 token 强制 2fa（fail-closed）：secret 为空或 OTP 错误一律拒绝；OTP 暴力尝试 5 次锁 5 分钟。`/nekomaid temp` 生成的临时 token（60 分钟有效）为单因子，无需两步验证。
 - 主 token = 服务器管理员（Terminal/Plugins 为设计内能力）；副 token 默认无高危能力，可经面板「令牌管理」页调整。
 - FilesManager 路径穿越防护（normalize + 软链拒绝 + realpath 校验 + zip slip 防护）。
 

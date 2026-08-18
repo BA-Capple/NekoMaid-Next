@@ -211,10 +211,10 @@ nm 2fa setup                 # 为主令牌生成 secret，输出 secret + 二�
 nm 2fa enable 123456         # 输入验证器当前 6 位码，校验通过即启用主令牌 2fa
 nm 2fa status                # 查看主令牌 2fa 状态
 nm 2fa disable               # 清空主令牌 secret（主令牌将无法连接，需重新 setup）
-nm temp                      # 生成临时 token（独立 secret + 二维码）
+nm temp                  # 生成临时 token（60 分钟有效，无需两步验证）
 ```
 
-- 每个令牌（主/副/临时）有独立 TOTP secret；**连接必须提供匹配的 OTP，否则拒绝**（fail-closed），5 次失败锁 5 分钟。
+- 主/副令牌强制 TOTP（fail-closed）：**连接必须提供匹配的 OTP，否则拒绝**，5 次失败锁 5 分钟；**临时令牌（`nm temp`）为单因子，无需两步验证**（60 分钟有效）。
 - 通过 token+OTP 后自动签发 8 小时 session（绑定源 IP，前端存 sessionStorage）；期间刷新/重连免输 OTP，换 IP 或过期需重输。
 - 主令牌（`primary: true`）全权限；副令牌默认只读 + 玩家管理，可在面板「令牌管理」页调整权限（terminal/plugins/files/config 等默认禁用）。
 - `/op <玩家>` 自动为该玩家生成副 token 并游戏内发链接；`/deop` 自动撤销；`nm token bind <你的游戏名>` 绑定后 op 自己会跳过。
@@ -261,7 +261,7 @@ curl -sk "https://example.com:33333/" | head -c 200          # 期望 index.html
 ## 8. 安全基线
 
 - ✅ 插件只监听 `127.0.0.1`，公网仅暴露 nginx TLS
-- ✅ 统一 tokens 列表：主令牌全权限，副令牌受权限白名单限制；每 token 独立 TOTP 且强制校验（fail-closed，5 次失败锁 5 分钟）
+- ✅ 统一 tokens 列表：主令牌全权限，副令牌受权限白名单限制；主/副 token 强制 TOTP（fail-closed，5 次失败锁 5 分钟），临时 token（`nm temp`）单因子 60 分钟有效
 - ✅ 会话凭据（8h session，绑定源 IP），减少重复输 OTP
 - ✅ 副 token 权限门覆盖全部高危模块（Terminal/Plugins/Files/ServerConfig/Vault/Editors/Inventory/Scheduler 执行），默认只读 + 玩家管理
 - ✅ FilesManager 三层路径校验（normalize+startsWith、逐段 NOFOLLOW 软链拒绝、toRealPath），zip slip 双保险，copy/rename 双端校验
