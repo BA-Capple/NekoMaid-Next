@@ -96,7 +96,9 @@ const EntityEditor: React.FC = () => {
           navigate('/NekoMaid/entity')
           return
         }
-        if (globalData.hasNBTAPI && entity.nbt) entity.nbt = stringify(parse(entity.nbt), { pretty: true })
+        if (globalData.hasNBTAPI && entity.nbt) {
+          try { entity.nbt = stringify(parse(entity.nbt), { pretty: true }) } catch { }
+        }
         setCustomName(entity.customName || '')
         setEntity(entity)
       }, id)

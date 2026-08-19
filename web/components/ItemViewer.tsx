@@ -111,7 +111,9 @@ const ItemViewer: React.FC<ItemViewerProps> = ({ item, data, onDrag, onDrop, onE
   const lowerCase = item ? item.type.toLowerCase() : ''
   const type = item ? item.icon || lowerCase : ''
   const hasEnchants = item?.hasEnchants && type in icons
-  const nbt: NBT | null = item?.nbt ? parse(item.nbt) as any as NBT : null
+  const nbt: NBT | null = item?.nbt
+    ? (() => { try { return parse(item.nbt) as any as NBT } catch { return null } })()
+    : null
   const elm = <Paper
     {...props}
     onDragOver={globalData.hasNBTAPI && onDrop

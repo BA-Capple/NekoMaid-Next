@@ -115,7 +115,9 @@ const BlockEditor: React.FC = () => {
           navigate('/NekoMaid/block')
           return
         }
-        if (globalData.hasNBTAPI && block.nbt) block.nbt = stringify(parse(block.nbt), { pretty: true })
+        if (globalData.hasNBTAPI && block.nbt) {
+          try { block.nbt = stringify(parse(block.nbt), { pretty: true }) } catch { }
+        }
         setBlock(block)
       }, params.world, params.x, params.y, params.z)
     }
