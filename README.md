@@ -18,8 +18,9 @@
 ## Usage
 
 1. 构建：`./gradlew shadowJar --no-daemon`，产物为 `build/libs/NekoMaid-1.0-SNAPSHOT.jar`
-2. 部署（nginx TLS 反代、前端托管、令牌与 2fa 配置、验证清单）：**见 [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md)**
-3. 控制台执行 `/nm`（或 `/nekomaid`）查看管理地址
+2. **完整功能使用说明（所有命令、页面、配置项、权限模型）：见 [docs/USAGE.md](./docs/USAGE.md)**
+3. 部署（nginx TLS 反代、前端托管、令牌与 2fa 配置、验证清单）：**见 [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md)**
+4. 控制台执行 `/nm`（或 `/nekomaid`）查看管理地址
 
 ## Commands
 
