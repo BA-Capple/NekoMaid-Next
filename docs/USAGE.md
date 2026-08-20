@@ -56,7 +56,7 @@ NekoMaid 是一个 Bukkit/Paper 服务端 Web 管理插件。服务端通过内�
 
 管理副 token：
 
-- `list`：列出所有 token（隐藏 secret）。
+- `list`：列出所有 token（token 值打码，不显示 TOTP secret）。
 - `create <name> [player]`：创建副 token，输出 token、TOTP secret 和管理 URL；可选绑定玩家名（该玩家 `/op` 时复用该副 token）。
 - `revoke <name>`：删除副 token。
 - `bind <player>`：把主 token 绑定到玩家名。之后对这名玩家执行 `/op` 不会自动创建副 token，也不会把全权限主 token 链接发到聊天。

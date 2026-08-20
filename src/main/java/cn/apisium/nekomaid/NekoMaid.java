@@ -575,7 +575,7 @@ public final class NekoMaid extends JavaPlugin implements Listener {
                                 sender.sendMessage(ChatColor.AQUA + "- " + m.get("name")
                                         + (isPrimary ? " [PRIMARY]" : "")
                                         + (m.get("player") == null ? "" : " (" + m.get("player") + ")")
-                                        + " token=" + m.get("token"));
+                                        + " token=" + maskToken(String.valueOf(m.get("token"))));
                             }
                         }
                         return true;
@@ -701,6 +701,13 @@ public final class NekoMaid extends JavaPlugin implements Listener {
     private static boolean noPermission(CommandSender sender) {
         sender.sendMessage(ChatColor.RED + "[NekoMaid] You do not have permission to use this command.");
         return true;
+    }
+
+    /** Masks a token for display in command output: keeps the first 6 and last 4 chars. */
+    @NotNull
+    private static String maskToken(@NotNull String token) {
+        if (token.length() <= 10) return token.replaceAll(".", "*");
+        return token.substring(0, 6) + "..." + token.substring(token.length() - 4);
     }
 
     /** Feature permissions granted to secondary/temporary tokens by default. */
