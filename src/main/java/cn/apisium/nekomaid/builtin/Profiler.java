@@ -241,10 +241,15 @@ public final class Profiler implements Listener, NotificationListener {
                 inject();
             } else {
                 plugins.clear();
-                statusTimer.cancel();
-                pluginsTimer.cancel();
-                statusTimer = null;
-                if (Timings.INSTANCE != null) {
+                if (statusTimer != null) {
+                    statusTimer.cancel();
+                    statusTimer = null;
+                }
+                if (pluginsTimer != null) {
+                    pluginsTimer.cancel();
+                    pluginsTimer = null;
+                }
+                if (Timings.INSTANCE != null && timingsTimer != null) {
                     timingsTimer.cancel();
                     timingsTimer = null;
                 }

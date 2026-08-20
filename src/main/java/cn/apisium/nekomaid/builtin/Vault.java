@@ -30,17 +30,25 @@ final class Vault {
         RegisteredServiceProvider<Chat> c = sm.getRegistration(Chat.class);
         Chat chat = c == null ? null : c.getProvider();
 
-        main.GLOBAL_DATA.put("hasVault", true);
-        if (econ != null && econ.isEnabled()) main.GLOBAL_DATA.put("vaultEconomy", new JSONObject()
-                .put("singular", econ.currencyNameSingular())
-                .put("plural", econ.currencyNamePlural())
-                .put("digits", econ.fractionalDigits())
-        );
+        boolean hasVault = false;
+        if (econ != null && econ.isEnabled()) {
+            hasVault = true;
+            main.GLOBAL_DATA.put("vaultEconomy", new JSONObject()
+                    .put("singular", econ.currencyNameSingular())
+                    .put("plural", econ.currencyNamePlural())
+                    .put("digits", econ.fractionalDigits())
+            );
+        }
         if (permission != null && permission.isEnabled()) {
+            hasVault = true;
             main.GLOBAL_DATA.put("hasVaultPermission", true);
             if (permission.hasGroupSupport()) main.GLOBAL_DATA.put("hasVaultGroups", true);
         }
-        if (chat != null && chat.isEnabled()) main.GLOBAL_DATA.put("hasVaultChat", true);
+        if (chat != null && chat.isEnabled()) {
+            hasVault = true;
+            main.GLOBAL_DATA.put("hasVaultChat", true);
+        }
+        if (hasVault) main.GLOBAL_DATA.put("hasVault", true);
         main.onConnected(main, client -> {
             if (!client.hasPermission("vault")) return; // secondary tokens: no economy/permission editing
             client.onWithMultiArgsAck("vault:fetch", args -> {
