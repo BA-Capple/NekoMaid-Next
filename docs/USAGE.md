@@ -43,7 +43,9 @@ NekoMaid 是一个 Bukkit/Paper 服务端 Web 管理插件。服务端通过内�
 
 ### 2.7 `/nm 2fa status|setup|enable <code>|disable`
 
-管理主 token 的 TOTP 两步验证：
+管理主 token 的 TOTP 两步验证。
+
+> 权限：`reload`、`2fa`、`token`、`diagnostic` 这些会读取/修改 NekoMaid 配置的子命令，仅控制台或主 token 绑定的玩家可执行；`/nm`、`/nm block`、`/nm entity`、`/nm temp`、`/nm help` 不受影响。
 
 - `status`：查看主 token 是否已配置 2FA。
 - `setup`：生成新的 TOTP secret，并保存二维码到 `plugins/NekoMaid/2fa-qr.png`。
@@ -94,7 +96,7 @@ NekoMaid 是一个 Bukkit/Paper 服务端 Web 管理插件。服务端通过内�
 
 - 浏览/编辑服务端根目录下的文件（最大编辑 4MB）。
 - 支持新建目录、重命名、复制、删除、下载、上传、压缩/解压（zip/tar/jar/ar/cpio）。
-- 副 token 即使被授予 `files`，也不能访问 `plugins/NekoMaid` 和 `plugins/LuckPerms` 目录。
+- 副 token 即使被授予 `files`，也不能访问 `plugins/NekoMaid` 和 `plugins/LuckPerms` 目录；例外：主 token 绑定的玩家（其 token 的 `player` 与主 token 的 `player` 一致）可以访问 `plugins/NekoMaid` 配置目录，但仍不能访问 `plugins/LuckPerms`。
 - 需要 `files` 权限。
 
 ### 3.4 Plugins（插件）
@@ -153,8 +155,8 @@ NekoMaid 是一个 Bukkit/Paper 服务端 Web 管理插件。服务端通过内�
 
 ### 3.12 TokenManage（令牌管理）
 
-- 仅主 token 可用。
-- 查看副 token，调整每个副 token 的权限白名单和 `allowNo2fa` 开关。
+- 主 token（以及主 token 绑定的玩家对应的 token）可查看全部副 token，调整每个副 token 的权限白名单和 `allowNo2fa` 开关。
+- 其他副 token 打开本页时只能看到自己的 token 信息（token 值、绑定玩家、权限列表、allowNo2fa），不能查看或修改其他 token。
 
 ### 3.13 Config（服务器配置）
 

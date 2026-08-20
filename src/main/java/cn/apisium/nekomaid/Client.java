@@ -19,6 +19,9 @@ public final class Client {
     public final SocketIoSocket client;
     /** True for the primary (config token) client; secondary/temporary tokens are restricted. */
     public boolean primary = false;
+    /** Player name bound to this token in config (`player`), if any. */
+    @Nullable
+    public String player = null;
     /** Feature permissions granted to a secondary token; ignored for primary. */
     private Set<String> permissions = new HashSet<>();
     private final HashSet<String> events = new HashSet<>();

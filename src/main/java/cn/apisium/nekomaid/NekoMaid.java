@@ -218,23 +218,28 @@ public final class NekoMaid extends JavaPlugin implements Listener {
                     return;
                 }
             }
-            getClient("NekoMaid", client).primary = primary;
+            Client connectedClient = getClient("NekoMaid", client);
+            connectedClient.primary = primary;
+            connectedClient.player = tokenEntry == null ? null : (String) tokenEntry.get("player");
             if (!primary) {
                 // Secondary & temporary tokens: read-only + player management by default.
                 Set<String> perms = getSecondaryTokenPermissions(token);
                 if (perms == null) perms = DEFAULT_SECONDARY_PERMISSIONS;
-                getClient("NekoMaid", client).setPermissions(perms);
+                connectedClient.setPermissions(perms);
             }
             // Issue a short-lived session credential so reconnect/reload within 8h skips OTP.
             String sessionId = UUID.randomUUID().toString();
             sessions.put(sessionId, new SessionInfo(token, remoteIpOf(client)));
             client.send("session", sessionId);
-            if (primary) {
-                // Primary token manages secondary tokens from the panel.
-                getClient("NekoMaid", client)
+            if (primary || isPrimaryBoundPlayer(connectedClient.player)) {
+                // Primary token and the player bound to it manage secondary tokens from the panel.
+                connectedClient
                         .onWithAck("token:list", (Function<Object[], Object>) args -> getTokenListForPanel())
                         .onWithAck("token:update", (Function<Object[], Boolean>) args -> updateTokenPermissions(args));
             }
+            // Every token holder may read their own token entry (never the secret, never other tokens).
+            String connectedToken = token;
+            connectedClient.onWithAck("token:self", (Function<Object[], Object>) args -> getTokenViewForToken(connectedToken));
             client.once("disconnect", args -> {
                 pages.remove(client);
                 clients.remove(client);
@@ -656,6 +661,22 @@ public final class NekoMaid extends JavaPlugin implements Listener {
         return tokens;
     }
 
+    /** Panel-safe view of a single token for its own holder (never exposes TOTP secrets). */
+    private Object getTokenViewForToken(@NotNull String token) {
+        Map<String, Object> m = getTokenEntry(token);
+        if (m == null) return null;
+        Map<String, Object> view = new java.util.LinkedHashMap<>();
+        view.put("name", m.get("name"));
+        view.put("player", m.get("player"));
+        view.put("token", m.get("token"));
+        view.put("primary", Boolean.TRUE.equals(m.get("primary")));
+        view.put("permissions", Boolean.TRUE.equals(m.get("primary"))
+                ? new ArrayList<>(KNOWN_PERMISSIONS)
+                : m.getOrDefault("permissions", new ArrayList<>(DEFAULT_SECONDARY_PERMISSIONS)));
+        view.put("allowNo2fa", Boolean.TRUE.equals(m.get("allowNo2fa")));
+        return view;
+    }
+
     /** Panel-safe view of secondary tokens (never exposes TOTP secrets, skips the primary). */
     @SuppressWarnings("unchecked")
     private Object getTokenListForPanel() {
@@ -703,6 +724,15 @@ public final class NekoMaid extends JavaPlugin implements Listener {
         return true;
     }
 
+    /**
+     * Command-side config guard: only the console or the player bound to the primary
+     * token may read/modify NekoMaid config through /nm commands.
+     */
+    private boolean mayManageConfig(@NotNull CommandSender sender) {
+        if (!(sender instanceof org.bukkit.entity.Player)) return true; // console / command block
+        return isPrimaryBoundPlayer(sender.getName());
+    }
+
     /** Masks a token for display in command output: keeps the first 6 and last 4 chars. */
     @NotNull
     private static String maskToken(@NotNull String token) {
@@ -718,6 +748,10 @@ public final class NekoMaid extends JavaPlugin implements Listener {
     private static final Set<String> KNOWN_PERMISSIONS = Set.of(
             "dashboard", "playerList", "players", "worlds", "profiler", "scheduler", "entity", "block",
             "terminal", "plugins", "files", "config", "editors", "vault", "inventory");
+
+    /** /nm subcommands that read or modify NekoMaid's own config (primary-bound player only). */
+    private static final Set<String> CONFIG_MANAGEMENT_SUBCOMMANDS = Set.of(
+            "reload", "2fa", "token", "diagnostic");
 
     private boolean isTwoFactorEnabled() {
         Map<String, Object> primary = getPrimaryTokenEntry();
@@ -762,6 +796,21 @@ public final class NekoMaid extends JavaPlugin implements Listener {
             if (Boolean.TRUE.equals(m.get("primary"))) return m;
         }
         return null;
+    }
+
+    /** The player bound to the primary token, or null if none is bound. */
+    @Nullable
+    public String getPrimaryBoundPlayer() {
+        Map<String, Object> primary = getPrimaryTokenEntry();
+        Object p = primary == null ? null : primary.get("player");
+        return p instanceof String ? (String) p : null;
+    }
+
+    /** Whether the given player name is bound to the primary token. */
+    public boolean isPrimaryBoundPlayer(@Nullable String playerName) {
+        if (playerName == null) return false;
+        String bound = getPrimaryBoundPlayer();
+        return bound != null && bound.equalsIgnoreCase(playerName);
     }
 
     /** Updates (or clears) the primary token's TOTP secret. */
@@ -823,13 +872,19 @@ public final class NekoMaid extends JavaPlugin implements Listener {
     public boolean onCommand(@NotNull CommandSender sender, org.bukkit.command.@NotNull Command command,
                              @NotNull String label, @NotNull String[] args) {
         if (!command.testPermission(sender)) return true;
-        if (args.length == 0) sender.sendMessage(URL_MESSAGE + getConnectUrl());
-        else {
-            Map.Entry<org.bukkit.plugin.Plugin, NekoMaidCommand> it = pluginCommands.get(args[0]);
-            if (it == null) sendHelp(sender);
-            else if (!it.getValue().onCommand(sender, command, label, Arrays.copyOfRange(args, 1, args.length)))
-                sendUsages(sender, args[0], it.getValue().getUsages());
+        if (args.length == 0) {
+            sender.sendMessage(URL_MESSAGE + getConnectUrl());
+            return true;
         }
+        String sub = args[0].toLowerCase(Locale.ROOT);
+        if (CONFIG_MANAGEMENT_SUBCOMMANDS.contains(sub) && !mayManageConfig(sender)) {
+            sender.sendMessage(ChatColor.RED + "[NekoMaid] Only the console or the primary token's bound player can use this command.");
+            return true;
+        }
+        Map.Entry<org.bukkit.plugin.Plugin, NekoMaidCommand> it = pluginCommands.get(args[0]);
+        if (it == null) sendHelp(sender);
+        else if (!it.getValue().onCommand(sender, command, label, Arrays.copyOfRange(args, 1, args.length)))
+            sendUsages(sender, args[0], it.getValue().getUsages());
         return true;
     }
 
@@ -948,8 +1003,14 @@ public final class NekoMaid extends JavaPlugin implements Listener {
                                       @NotNull String alias, @NotNull String[] args) {
         switch (args.length) {
             case 0: return Collections.emptyList();
-            case 1: return new ArrayList<>(pluginCommands.keySet());
+            case 1: {
+                List<String> commands = new ArrayList<>(pluginCommands.keySet());
+                if (!mayManageConfig(sender)) commands.removeIf(CONFIG_MANAGEMENT_SUBCOMMANDS::contains);
+                return commands;
+            }
             default:
+                if (!mayManageConfig(sender) && CONFIG_MANAGEMENT_SUBCOMMANDS.contains(args[0].toLowerCase(Locale.ROOT)))
+                    return Collections.emptyList();
                 Map.Entry<org.bukkit.plugin.Plugin, NekoMaidCommand> it = pluginCommands.get(args[0]);
                 if (it == null) return Collections.emptyList();
                 else return it.getValue().onTabComplete(sender, command, alias, Arrays.copyOfRange(args, 1, args.length));
