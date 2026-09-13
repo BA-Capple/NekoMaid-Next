@@ -5,8 +5,17 @@
 # Manage via: /nm token create|list|revoke (secondary), /nm 2fa setup|enable|disable (primary).
 tokens: []
 
-hostname: 127.0.0.1
-customAddress: ''
+# Address the panel is reachable at from outside, used for the management links /nekomaid prints.
+# Leave it empty to let NekoMaid work it out: it remembers the address browsers actually used to
+# reach the panel, and before the first visit falls back to this machine's LAN address.
+# Set it explicitly (e.g. 'panel.example.com' or 'panel.example.com:8443') to pin it down.
+hostname: ''
+# Template for the link /nekomaid prints.
+#   {origin}   -> scheme + address of the panel itself, e.g. https://panel.example.com:8443
+#                 (the bundled front-end is served from exactly there, so the default points at it)
+#   {hostname} -> the panel's socket.io endpoint, e.g. panel.example.com:8443/NekoMaid?<token>
+#   {token}    -> the token value
+customAddress: '{origin}/?{hostname}'
 # Port for the panel itself. Any free port works; the panel is then reachable at
 # https://<host>:<port>/. The web panel ships inside the jar, so nothing else has to be installed.
 port: 8443

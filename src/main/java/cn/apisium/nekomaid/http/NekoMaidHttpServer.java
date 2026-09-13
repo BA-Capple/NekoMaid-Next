@@ -326,7 +326,7 @@ public final class NekoMaidHttpServer {
         p.addLast(new ChunkedWriteHandler());
         if (options.gzip()) p.addLast(new HttpContentCompressor());
         p.addLast(new WebSocketServerCompressionHandler());
-        p.addLast(new RemoteAddressHandler(options.trustProxyHeaders()));
+        p.addLast(new RemoteAddressHandler(options.trustProxyHeaders(), plugin::rememberPanelAddress));
         p.addLast(new EngineIoHandler(engineIoServer, SOCKET_IO_PATH,
                 (tlsTerminated ? "wss://" : "ws://") + "localhost:" + listenPort, MAX_CONTENT_LENGTH) {
             @Override
@@ -530,6 +530,22 @@ public final class NekoMaidHttpServer {
             }
             // Resolve the request path safely against the static root (resolved once in constructor).
             String rawPath = new QueryStringDecoder(request.uri()).path();
+            // Opening the bare panel address (no connection parameter) would land on the front-end's
+            // "enter a server address" screen. Send the browser to the same address carrying this
+            // panel's own endpoint, taken from the Host it was requested with — so any IP, domain or
+            // port works without configuring anything.
+            if (rawPath.equals("/") && !request.uri().contains("?")) {
+                String host = request.headers().get(HttpHeaderNames.HOST);
+                if (host != null && !host.isEmpty()) {
+                    FullHttpResponse redirect = new DefaultFullHttpResponse(
+                            HttpVersion.HTTP_1_1, HttpResponseStatus.FOUND);
+                    redirect.headers().set(HttpHeaderNames.LOCATION, "/?"
+                            + java.net.URLEncoder.encode(host + "/NekoMaid", StandardCharsets.UTF_8));
+                    HttpUtil.setContentLength(redirect, 0);
+                    ctx.writeAndFlush(redirect);
+                    return;
+                }
+            }
             if (rawPath.equals("/")) rawPath = "/index.html";
             Path target = staticRoot.resolve(rawPath.startsWith("/") ? rawPath.substring(1) : rawPath)
                     .normalize();
