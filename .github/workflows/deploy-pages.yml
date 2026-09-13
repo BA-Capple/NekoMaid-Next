@@ -47,8 +47,28 @@ jobs:
       - name: Download Minecraft language files (zh_cn, en_gb -> en_us)
         run: npm run gen:minecraft:language
 
+      # Same as the plugin build: Mojang's textures are not in the repository, so unpack them
+      # here too. Tolerated on failure — the page builds either way, only icons go missing.
+      - name: Fetch Minecraft block/item icons (Mojang assets stay out of the repository)
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/manifest.json https://piston-meta.mojang.com/mc/game/version_manifest_v2.json
+          url=$(jq -r '.versions[] | select(.id=="26.2" or .id=="1.21.11") | .url' /tmp/manifest.json | head -1)
+          if [ -z "$url" ]; then
+            url=$(jq -r '[.versions[] | select(.type=="release")][0].url' /tmp/manifest.json)
+          fi
+          client=$(curl -fsSL "$url" | jq -r '.downloads.client.url')
+          curl -fsSL -o /tmp/client.jar "$client"
+          rm -rf /tmp/mcassets && mkdir -p /tmp/mcassets
+          unzip -q -o /tmp/client.jar 'assets/minecraft/textures/item/*' 'assets/minecraft/textures/block/*' -d /tmp/mcassets
+          mkdir -p icons/minecraft
+          cp -rn /tmp/mcassets/assets/minecraft/textures/block/. icons/minecraft/ || true
+          cp -r /tmp/mcassets/assets/minecraft/textures/item/. icons/minecraft/ || true
+          echo "minecraft icons: $(find icons/minecraft -type f | wc -l)"
+
       - name: Copy material icons to public
-        run: mkdir -p public/icons && cp -r icons/material public/icons/
+        run: mkdir -p public/icons && cp -r icons/material public/icons/ && cp -r icons/minecraft public/icons/
 
       - name: Build frontend (vite)
         run: npm run build

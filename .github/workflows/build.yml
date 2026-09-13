@@ -2,7 +2,7 @@ name: Build
 
 on:
   push:
-    branches: [master]
+    branches: [master, 1.21.11]
   pull_request:
   release:
     types: [created]
@@ -30,6 +30,28 @@ jobs:
           version=${version#v}
           sed -i "s/0\.0\.0/${version}/" src/main/resources/plugin.yml
 
+      # Mojang's block/item textures are intentionally not stored in the repository, but the
+      # released jar does ship them, so unpack them into the resource tree before building.
+      # Tolerated on failure: the plugin still builds, the panel just loses those icons.
+      - name: Fetch Minecraft block/item icons (Mojang assets stay out of the repository)
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/manifest.json https://piston-meta.mojang.com/mc/game/version_manifest_v2.json
+          url=$(jq -r '.versions[] | select(.id=="26.2" or .id=="1.21.11") | .url' /tmp/manifest.json | head -1)
+          if [ -z "$url" ]; then
+            url=$(jq -r '[.versions[] | select(.type=="release")][0].url' /tmp/manifest.json)
+          fi
+          client=$(curl -fsSL "$url" | jq -r '.downloads.client.url')
+          curl -fsSL -o /tmp/client.jar "$client"
+          rm -rf /tmp/mcassets && mkdir -p /tmp/mcassets
+          unzip -q -o /tmp/client.jar 'assets/minecraft/textures/item/*' 'assets/minecraft/textures/block/*' -d /tmp/mcassets
+          mkdir -p src/main/resources/static/icons/minecraft
+          # block first, then item, so an item texture wins where both exist
+          cp -rn /tmp/mcassets/assets/minecraft/textures/block/. src/main/resources/static/icons/minecraft/ || true
+          cp -r /tmp/mcassets/assets/minecraft/textures/item/. src/main/resources/static/icons/minecraft/ || true
+          echo "bundled minecraft icons: $(find src/main/resources/static/icons/minecraft -type f | wc -l)"
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
@@ -39,9 +61,9 @@ jobs:
       - name: Build with Gradle (shadowJar)
         run: ./gradlew shadowJar --no-daemon
 
-      - name: Upload plugin jar to release
-        if: github.event_name == 'release'
-        run: mv build/libs/NekoMaid-1.0-SNAPSHOT.jar build/libs/NekoMaid.jar
+      # build.gradle pins the archive name to NekoMaid.jar, so nothing has to be renamed here.
+      - name: Show build output
+        run: ls -la build/libs/
 
       - name: Attach jar to GitHub Release
         if: github.event_name == 'release'
