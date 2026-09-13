@@ -966,6 +966,50 @@ public final class NekoMaid extends JavaPlugin implements Listener {
         return httpServer != null ? httpServer.getPort() : getConfig().getInt("port", 12334);
     }
 
+    /** Address a browser last used to reach the panel; {@code null} until one does. */
+    private volatile String panelAddress;
+    /** Whether that last visit arrived over TLS. */
+    private volatile boolean panelAddressSecure;
+
+    /**
+     * Remembers the address a browser used to reach the panel. Loopback visits are ignored — they
+     * say nothing about how the panel is reached from elsewhere. This is what lets /nekomaid hand
+     * out a working link on any IP, domain or port without being configured for one.
+     */
+    public void rememberPanelAddress(@NotNull String host, boolean secure) {
+        String value = host.trim();
+        if (value.isEmpty() || value.startsWith("127.") || value.startsWith("localhost")
+                || value.startsWith("[::1]")) return;
+        panelAddress = value;
+        panelAddressSecure = secure;
+    }
+
+    /** Scheme plus address the panel is reachable at, as far as it can be determined. */
+    @NotNull
+    public String panelOrigin() {
+        String address = panelAddress;
+        if (address != null && !address.isEmpty()) {
+            return (panelAddressSecure ? "https://" : "http://") + address;
+        }
+        boolean secure = httpServer != null && httpServer.isPrimarySecure();
+        return (secure ? "https://" : "http://") + localAddress() + ":" + getConnectPort();
+    }
+
+    /** First usable non-loopback IPv4 address, used until a browser has visited the panel. */
+    private static String localAddress() {
+        try {
+            for (java.net.NetworkInterface nic : Collections.list(java.net.NetworkInterface.getNetworkInterfaces())) {
+                if (!nic.isUp() || nic.isLoopback() || nic.isVirtual()) continue;
+                for (java.net.InetAddress address : Collections.list(nic.getInetAddresses())) {
+                    if (address instanceof java.net.Inet4Address && !address.isLoopbackAddress()) {
+                        return address.getHostAddress();
+                    }
+                }
+            }
+        } catch (Throwable ignored) { }
+        return "127.0.0.1";
+    }
+
     @NotNull
     public String getConnectHostname(@NotNull String token) {
         return getConnectHostname(getConnectPort(), token);
@@ -973,19 +1017,26 @@ public final class NekoMaid extends JavaPlugin implements Listener {
 
     @NotNull
     public String getConnectHostname(int port, @Nullable String token) {
-        String url = getConfig().getString("hostname", "");
-        return (url.contains(":") ? url : url + ":" + port) + "/NekoMaid" + (token == null ? "" : "?" + token);
+        String configured = getConfig().getString("hostname", "");
+        String host = configured == null ? "" : configured.trim();
+        // Empty (or "auto") means: work it out from what browsers actually used, falling back to
+        // this machine's LAN address.
+        if (host.isEmpty() || "auto".equalsIgnoreCase(host)) host = panelOrigin().replaceFirst("^https?://", "");
+        return (host.contains(":") ? host : host + ":" + port) + "/NekoMaid" + (token == null ? "" : "?" + token);
     }
 
     @NotNull
     public String getConnectUrl(@NotNull String token) {
         String custom = getConfig().getString("customAddress", "");
-        int port = getConnectPort();
-        String url = getConnectHostname(port, token);
-        try { url = URLEncoder.encode(url, "UTF-8"); } catch (Throwable ignored) { }
-        return custom.isEmpty()
-                ? "https://BA-Capple.github.io/NekoMaid-Next/?" + url
-                : custom.replace("{token}", token).replace("{hostname}", url);
+        // Default to the panel's own front-end, which ships inside the jar and is served from the
+        // very same origin, so the printed link opens something usable out of the box.
+        if (custom == null || custom.isEmpty()) custom = "{origin}/?{hostname}";
+        String endpoint = getConnectHostname(getConnectPort(), token);
+        try { endpoint = URLEncoder.encode(endpoint, "UTF-8"); } catch (Throwable ignored) { }
+        return custom
+                .replace("{origin}", panelOrigin())
+                .replace("{hostname}", endpoint)
+                .replace("{token}", token);
     }
 
     @Contract("_, _, _ -> this")
