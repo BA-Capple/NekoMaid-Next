@@ -109,6 +109,9 @@ shadowJar {
     exclude 'META-INF/services/javax.imageio.spi.*'
 
     archiveClassifier.set('')
+    // Stable, version-less name: the released artifact is meant to be dropped straight into
+    // plugins/ as NekoMaid.jar.
+    archiveFileName.set('NekoMaid.jar')
     minimize()
 }
 build.dependsOn(shadowJar)

@@ -276,9 +276,8 @@ public final class NekoMaid extends JavaPlugin implements Listener {
         }).on("error", System.out::println);
         geoIP = new GeoIP(this);
         plugins = new BuiltinPlugins(this);
-        httpServer = new NekoMaidHttpServer(this, getConfig().getInt("port", 12334), engineIoServer,
-                plugins.getFilesManager().getUploadMap(), plugins.getFilesManager().getDownloadMap(),
-                getConfig().getString("static-path", "static"), getConfig().getBoolean("gzip", true));
+        httpServer = new NekoMaidHttpServer(this, NekoMaidHttpServer.Options.fromConfig(this), engineIoServer,
+                plugins.getFilesManager().getUploadMap(), plugins.getFilesManager().getDownloadMap());
         httpServer.start();
 
         getServer().getPluginManager().registerEvent(PluginDisableEvent.class, this, EventPriority.NORMAL, (a, e) -> {
