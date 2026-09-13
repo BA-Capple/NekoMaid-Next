@@ -68,8 +68,8 @@ final class Editors {
         main.onConnected(main, client -> {
             client
                     .onWithMultiArgsAck("item:fetch", () -> client.hasPermission("editors") ? data : null)
-                    .onWithMultiArgsAck("item:blocks", () -> client.hasPermission("editors") ? new Object[] { blocks, getWorldNames().toArray() } : new Object[] { new String[0], new String[0] })
-                    .onWithAck("block:fetch", (Function<Object[], BlockInfo>) args -> { if (!client.hasPermission("block")) return null; return Utils.sync(() -> {
+                    .onWithMultiArgsAck("item:blocks", () -> client.hasPermission("block") ? new Object[] { blocks, getWorldNames().toArray() } : new Object[] { new String[0], new String[0] })
+                    .onWithAck("block:fetch", (Function<Object[], BlockInfo>) args -> { if (!client.hasPermission("block")) return null; return sync(() -> {
                         try {
                             World world = main.getServer().getWorld((String) args[0]);
                             if (world == null) return null;
@@ -93,7 +93,7 @@ final class Editors {
                             e.printStackTrace();
                             return null;
                         }
-                    }); }).onWithAck("block:type", (Function<Object[], Boolean>) args -> { if (!client.hasPermission("block")) return false; return Utils.sync(() -> {
+                    }); }).onWithAck("block:type", (Function<Object[], Boolean>) args -> { if (!client.hasPermission("editors")) return false; return sync(() -> {
                 World world = main.getServer().getWorld((String) args[0]);
                 if (world != null) try {
                     Block b = world.getBlockAt((int) args[1], (int) args[2], (int) args[3]);
@@ -110,7 +110,7 @@ final class Editors {
                     return true;
                 } catch (Throwable e) { e.printStackTrace(); }
                 return false;
-            }); }).onWithAck("block:save", (Function<Object[], Boolean>) args -> { if (!client.hasPermission("editors")) return false; return Utils.sync(() -> {
+            }); }).onWithAck("block:save", (Function<Object[], Boolean>) args -> { if (!client.hasPermission("editors")) return false; return sync(() -> {
                 World world = main.getServer().getWorld((String) args[0]);
                 if (world != null) try {
                     Block b = world.getBlockAt((int) args[1], (int) args[2], (int) args[3]);
@@ -123,7 +123,7 @@ final class Editors {
                     return true;
                 } catch (Throwable e) { e.printStackTrace(); }
                 return false;
-            }); }).onWithAck("block:setItem", (Function<Object[], Boolean>) args -> { if (!client.hasPermission("editors")) return false; return Utils.sync(() -> {
+            }); }).onWithAck("block:setItem", (Function<Object[], Boolean>) args -> { if (!client.hasPermission("editors")) return false; return sync(() -> {
                 World world = main.getServer().getWorld((String) args[0]);
                 if (world != null) try {
                     BlockState state = world.getBlockAt((int) args[1], (int) args[2], (int) args[3]).getState();
@@ -138,7 +138,7 @@ final class Editors {
                     }
                 } catch (Throwable e) { e.printStackTrace(); }
                 return false;
-            }); }).onWithAck("entity:fetch", (Function<Object[], EntityInfo>) args -> { if (!client.hasPermission("entity")) return null; return Utils.sync(() -> {
+            }); }).onWithAck("entity:fetch", (Function<Object[], EntityInfo>) args -> { if (!client.hasPermission("entity")) return null; return sync(() -> {
                 try {
                     Entity entity = main.getServer().getEntity(UUID.fromString((String) args[0]));
                     if (entity == null) return null;
@@ -163,7 +163,7 @@ final class Editors {
                     e.printStackTrace();
                     return null;
                 }
-            }); }).onWithAck("entity:setItem", (Function<Object[], Boolean>) args -> { if (!client.hasPermission("editors")) return false; return Utils.sync(() -> {
+            }); }).onWithAck("entity:setItem", (Function<Object[], Boolean>) args -> { if (!client.hasPermission("editors")) return false; return sync(() -> {
                 Entity entity = main.getServer().getEntity(UUID.fromString((String) args[0]));
                 if (entity instanceof InventoryHolder) try {
                     Inventory inv = ((InventoryHolder) entity).getInventory();
@@ -175,7 +175,7 @@ final class Editors {
                     return true;
                 } catch (Throwable e) { e.printStackTrace(); }
                 return false;
-            }); }).onWithAck("entity:set", (Function<Object[], Boolean>) args -> { if (!client.hasPermission("editors")) return false; return Utils.sync(() -> {
+            }); }).onWithAck("entity:set", (Function<Object[], Boolean>) args -> { if (!client.hasPermission("editors")) return false; return sync(() -> {
                 Entity entity = main.getServer().getEntity(UUID.fromString((String) args[0]));
                 if (entity != null) {
                     boolean value = (boolean) args[2];
@@ -190,7 +190,7 @@ final class Editors {
                 return false;
             }); });
             if (Utils.hasNBTAPI()) {
-                client.onWithAck("entity:save", (Function<Object[], Boolean>) args -> { if (!client.hasPermission("editors")) return false; return Utils.sync(() -> {
+                client.onWithAck("entity:save", (Function<Object[], Boolean>) args -> { if (!client.hasPermission("editors")) return false; return sync(() -> {
                     Entity entity = main.getServer().getEntity(UUID.fromString((String) args[0]));
                     if (entity != null) {
                         if (args[1] != null) try {
@@ -295,6 +295,13 @@ final class Editors {
     }
 
     private Stream<String> getWorldNames() { return main.getServer().getWorlds().stream().map(World::getName); }
+
+    /**
+     * Runs a Bukkit task on the main thread without throwing on timeout/interruption.
+     * This keeps the socket.io acknowledgement path alive (returns null/false to the
+     * frontend) instead of letting an exception escape and never acknowledging the event.
+     */
+    private <T> T sync(java.util.concurrent.Callable<T> fn) { return Utils.sync(fn, false); }
     private String selectBlock(Block block) {
         main.broadcastInPage(main, "block", "block:select",
                 block.getWorld().getName(), block.getX(), block.getY(), block.getZ());

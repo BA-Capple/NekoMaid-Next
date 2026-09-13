@@ -111,7 +111,7 @@ final class Dashboard implements Listener {
             if (p == null) return false;
             main.getServer().getScheduler().runTask(main, () -> p.kickPlayer((String) args[1]));
             return true;
-        }).onWithAck("dashborad:checkUpdate", this::checkUpdate));
+        }).on("dashboard:checkUpdate", args -> this.checkUpdate()));
         s.getScheduler().runTaskTimerAsynchronously(main, () -> {
             if (main.getClientsCountInPage(main, "dashboard") == 0) return;
             refresh();

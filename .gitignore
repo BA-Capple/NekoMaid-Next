@@ -15,6 +15,10 @@ parcel-bundle-reports
 # Mojang 版权资源（禁止入库；icons.json/minecraftIcons.json 为构建必需，已提交）
 icons/minecraft
 languages/minecraft
+# 内置进 jar 的前端副本里同样含这些资源：本地构建出的 NekoMaid.jar 会打包它们（release 用），
+# 但源码仓库不收录。
+src/main/resources/static/icons/minecraft
+src/main/resources/static/languages/minecraft
 
 node_modules
 .parcel-cache

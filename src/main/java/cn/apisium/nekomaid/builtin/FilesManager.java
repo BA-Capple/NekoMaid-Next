@@ -34,6 +34,8 @@ public final class FilesManager {
     private final NekoMaid main;
     /** The actual server working directory, resolved once so path checks have one stable base. */
     private final Path root;
+    /** The NekoMaid plugin data directory (config.yml, 2fa qr, scheduler.json). */
+    private final Path nekoMaidRoot;
     /** Directories that secondary (non-primary) tokens may not read or modify. */
     private final List<Path> protectedRoots;
     private final Cache<String, Path> uploadMap = createCache();
@@ -46,8 +48,9 @@ public final class FilesManager {
         this.main = main;
         try {
             root = Paths.get(".").toRealPath();
+            nekoMaidRoot = main.getDataFolder().toPath().toAbsolutePath().normalize();   // NekoMaid settings
             protectedRoots = List.of(
-                    main.getDataFolder().toPath().toAbsolutePath().normalize(),          // NekoMaid settings
+                    nekoMaidRoot,
                     root.resolve("plugins").resolve("LuckPerms").toAbsolutePath().normalize() // permission data
             );
         } catch (IOException e) {
@@ -210,12 +213,16 @@ public final class FilesManager {
         return validateInsideRoot(root.resolve(requested));
     }
 
-    /** Client-aware variant: secondary (non-primary) tokens may not touch protected roots. */
+    /**
+     * Client-aware variant: secondary (non-primary) tokens may not touch protected roots,
+     * except the player bound to the primary token may access the NekoMaid config directory.
+     */
     private Path resolveInsideRoot(String input, Client client) throws IOException {
         Path p = resolveInsideRoot(input);
         if (!client.primary) {
             for (Path r : protectedRoots) {
                 if (p.startsWith(r)) {
+                    if (r.equals(nekoMaidRoot) && main.isPrimaryBoundPlayer(client.player)) continue;
                     throw new IOException("Secondary tokens cannot access " + r.getFileName());
                 }
             }

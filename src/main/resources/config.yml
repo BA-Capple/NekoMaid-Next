@@ -7,16 +7,60 @@ tokens: []
 
 hostname: 127.0.0.1
 customAddress: ''
-port: 12334
+# Port for the panel itself. Any free port works; the panel is then reachable at
+# https://<host>:<port>/. The web panel ships inside the jar, so nothing else has to be installed.
+port: 8443
+# Address the panel binds to. 0.0.0.0 makes it reachable from other machines; use 127.0.0.1 when a
+# reverse proxy such as nginx runs on the same host and terminates TLS instead.
+bind-address: 0.0.0.0
+# TLS for this listener. When no certificate is configured a self-signed one is generated on first
+# start — stored next to this file — so the panel is usable over HTTPS immediately (browsers warn
+# once until you point these at your own PEM files). PKCS#8 ("PRIVATE KEY"), SEC1
+# ("EC PRIVATE KEY") and PKCS#1 ("RSA PRIVATE KEY") keys are all accepted.
+# Set enabled: false to serve plain HTTP; only do that behind a reverse proxy.
+tls:
+  enabled: true
+  certificate: ''
+  private-key: ''
+# Trust X-Real-IP / X-Forwarded-For from the peer. Only enable this when the sole way in is a
+# reverse proxy you control (nginx overwrites X-Real-IP with $remote_addr). On a directly
+# reachable port these headers can be forged, so they are dropped and the address the TCP
+# connection actually came from is used instead.
+trust-proxy-headers: false
 # Directory (relative to the plugin data folder, or an absolute path) served for static web resources.
 static-path: static
 # Enable gzip compression for HTTP responses.
 gzip: true
 
+# Serve the panel on the same port as the Minecraft server, so only one port has to be exposed.
+# The first bytes of each connection are sniffed: TLS is terminated by NekoMaid itself (see tls
+# below), and Minecraft handshakes are relayed to the server listening on minecraft-port.
+port-share:
+  enabled: false
+  port: 25565
+  # '0.0.0.0' for IPv4 only, '::' for dual-stack (IPv4 and IPv6).
+  bind-address: '0.0.0.0'
+  minecraft-host: 127.0.0.1
+  # The port the Minecraft server itself listens on (server-port in server.properties).
+  minecraft-port: 25566
+  # Send the HAProxy PROXY protocol header while relaying, so the Minecraft server keeps seeing
+  # players' real IPs. Requires 'proxy-protocol: true' under 'proxies' in config/paper-global.yml;
+  # both sides must agree, or Minecraft connections are rejected.
+  proxy-protocol: false
+  # Allow plain http:// on the shared port. Keep false on a public port: without TLS the token
+  # and the one-time password would travel in the clear.
+  allow-plain-http: false
+  tls:
+    enabled: true
+    # PEM certificate chain and private key. Relative paths resolve against the plugin folder.
+    certificate: ''
+    private-key: ''
+
 skin-url: ''
 head-url: ''
 
 geolite2-eula: false
+geolite2-license-key: ''
 baidu-map-license-key: ''
 
 logger:

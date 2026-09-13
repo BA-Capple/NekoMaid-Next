@@ -83,7 +83,7 @@ final class Worlds {
         main.onConnected(main, client -> {
             if (!client.hasPermission("worlds")) return; // secondary tokens: read-only scope
             client.onWithAck("worlds:fetch", this::getWorlds)
-                    .onWithAck("worlds:weather", args -> {
+                    .on("worlds:weather", args -> {
                         org.bukkit.World world = main.getServer().getWorld(UUID.fromString((String) args[0]));
                         if (world == null) return;
                         main.getServer().getScheduler().runTask(main, () -> {
@@ -93,7 +93,7 @@ final class Worlds {
                             } else if (world.hasStorm()) world.setThundering(true);
                             else world.setStorm(true);
                         });
-                    }).onWithAck("worlds:rule", args -> {
+                    }).on("worlds:rule", args -> {
                 org.bukkit.World world = main.getServer().getWorld(UUID.fromString((String) args[0]));
                 if (world == null) return;
                 String k = (String) args[1], v = (String) args[2];
@@ -101,7 +101,7 @@ final class Worlds {
                     world.setGameRuleValue(k, v);
                     if (!hasWorldGameRuleChangeEvent) update();
                 });
-            }).onWithAck("worlds:difficulty", args -> {
+            }).on("worlds:difficulty", args -> {
                 org.bukkit.World world = main.getServer().getWorld(UUID.fromString((String) args[0]));
                 if (world == null) return;
                 String value = (String) args[1];
@@ -117,7 +117,7 @@ final class Worlds {
                     }
                     update();
                 });
-            }).onWithAck("worlds:pvp", args -> {
+            }).on("worlds:pvp", args -> {
                 org.bukkit.World world = main.getServer().getWorld(UUID.fromString((String) args[0]));
                 if (world == null) return;
                 boolean value = (boolean) args[1];
@@ -132,21 +132,21 @@ final class Worlds {
                     }
                     update();
                 });
-            }).onWithAck("worlds:viewDistance", args -> {
+            }).on("worlds:viewDistance", args -> {
                 org.bukkit.World world = main.getServer().getWorld(UUID.fromString((String) args[0]));
                 if (world == null || !canSetViewDistance) return;
                 main.getServer().getScheduler().runTask(main, () -> {
                     world.setViewDistance((int) args[1]);
                     update();
                 });
-            }).onWithAck("worlds:save", args -> {
+            }).on("worlds:save", args -> {
                 org.bukkit.World world = main.getServer().getWorld(UUID.fromString((String) args[0]));
                 if (world == null) return;
                 main.getServer().getScheduler().runTask(main, () -> world.save());
             });
             if (mv != null) try {
                 MVWorldManager wm = ((MultiverseCore) mv).getMVWorldManager();
-                client.onWithAck("worlds:set", args -> {
+                client.on("worlds:set", args -> {
                     org.bukkit.World world = main.getServer().getWorld(UUID.fromString((String) args[0]));
                     if (world == null) return;
                     main.getServer().getScheduler().runTask(main, () -> {

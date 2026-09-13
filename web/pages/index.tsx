@@ -51,7 +51,7 @@ export default (p: Plugin) => p.addPages(
   { component: Files, path: 'files/*', icon: <Description />, title: lang.files.title },
   { component: Plugins, path: 'plugins', icon: <Extension />, title: lang.plugins.title },
   { component: Worlds, path: 'worlds', icon: <Public />, title: lang.worlds.title },
-  { component: BlockEditor, path: 'block', icon: <Widgets />, title: lang.blockEditor.title },
+  { component: BlockEditor, path: ['block', 'block/:world/:x/:y/:z'], icon: <Widgets />, title: lang.blockEditor.title },
   { component: EntityEditor, path: ['entity', 'entity/:id'], icon: <Pets />, title: lang.entityEditor.title },
   { component: loadable(() => import('./Profiler')), path: 'profiler', icon: ProfilerIcon, title: lang.profiler.title },
   { component: loadable(() => import('./Scheduler')), path: 'scheduler', icon: <Schedule />, title: lang.scheduler.title },

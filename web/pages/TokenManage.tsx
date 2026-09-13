@@ -50,12 +50,16 @@ const TokenManage: React.FC = () => {
   const [perms, setPerms] = useState<Set<string>>(new Set())
   const [allowNo2fa, setAllowNo2fa] = useState(false)
   const [denied, setDenied] = useState(false)
+  const [self, setSelf] = useState<TokenInfo | null>(null)
   const [saving, setSaving] = useState(false)
 
   const refresh = () => {
     plugin.emit('token:list', (data: any) => {
       if (Array.isArray(data)) setTokens(data as TokenInfo[])
-      else setDenied(true)
+      else {
+        setDenied(true)
+        plugin.emit('token:self', (mine: any) => setSelf(mine && typeof mine === 'object' ? mine as TokenInfo : null))
+      }
     })
   }
   useEffect(() => { refresh() }, [])
@@ -85,7 +89,25 @@ const TokenManage: React.FC = () => {
     }, selected, Array.from(perms), allowNo2fa)
   }
 
-  if (denied) return <Box p={3}><Typography>{lang.noPermission}</Typography></Box>
+  if (denied) {
+    if (self) {
+      return <Box p={3}>
+        <Typography variant='h5' gutterBottom>{lang.tokenManage.title}</Typography>
+        <Paper sx={{ p: 2 }}>
+          <Typography variant='body1'><b>Token:</b> {self.token}</Typography>
+          {self.player && <Typography variant='body2' color='textSecondary'>Player: {self.player}</Typography>}
+          <Typography variant='body2' color='textSecondary'>allowNo2fa: {self.allowNo2fa ? 'true' : 'false'}</Typography>
+          <Typography variant='body2' sx={{ mt: 1 }}>{lang.tokenManage.permission}:</Typography>
+          <Box mt={1}>
+            {FEATURES.filter(([key]) => (self.permissions || []).includes(key)).map(([key, label]) => (
+              <Chip key={key} label={label} size='small' sx={{ mr: 0.5, mb: 0.5 }} />
+            ))}
+          </Box>
+        </Paper>
+      </Box>
+    }
+    return <Box p={3}><Typography>{lang.noPermission}</Typography></Box>
+  }
 
   return (
     <Box p={3}>

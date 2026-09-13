@@ -17,17 +17,27 @@ import java.nio.file.Path;
 import java.util.zip.GZIPInputStream;
 
 public final class GeoIP {
-    // **Warning!** The license key is not allowed to be used in other projects!
-    private final static String URL = "https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City&license_key=HDwWs9easBt22fIH&suffix=tar.gz";
+    private final static String URL_TEMPLATE =
+            "https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City&license_key=%s&suffix=tar.gz";
     private final static long TIME = 30 * 24 * 60 * 60 * 1000L;
     private final Path databaseFile;
     private final NekoMaid main;
+    private String url;
     private DatabaseReader reader;
 
     public GeoIP(NekoMaid main) {
         this.main = main;
         databaseFile = new File(main.getDataFolder(), "GeoIP.db").toPath();
         if (!main.getConfig().getBoolean("geolite2-eula", false)) return;
+        // The MaxMind license key belongs to the server owner; never hardcode it in source
+        // (AGENTS.md: any third-party API key must be delivered via server config).
+        String licenseKey = main.getConfig().getString("geolite2-license-key", "");
+        if (licenseKey == null || licenseKey.isEmpty()) {
+            main.getLogger().warning("[NekoMaid] geolite2-eula is enabled but geolite2-license-key is not set;"
+                    + " skipping GeoLite2 download.");
+            return;
+        }
+        url = String.format(URL_TEMPLATE, licenseKey);
         main.getServer().getScheduler().runTaskAsynchronously(main, () -> {
             downloadDatabase();
             try {
@@ -63,7 +73,7 @@ public final class GeoIP {
         }
         main.getLogger().info("Downloading GeoLite2 database...");
         try (
-                TarArchiveInputStream tar = new TarArchiveInputStream(new GZIPInputStream(new URL(URL).openStream()))
+                TarArchiveInputStream tar = new TarArchiveInputStream(new GZIPInputStream(new URL(url).openStream()))
         ) {
             ArchiveEntry entry;
             while ((entry = tar.getNextEntry()) != null) if (entry.getName().endsWith("/GeoLite2-City.mmdb"))

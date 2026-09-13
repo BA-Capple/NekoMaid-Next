@@ -21,19 +21,39 @@ import java.util.List;
 import java.util.stream.Stream;
 
 final class Plugins implements Listener {
-    private final static boolean HAS_PLUGMAN;
+    private final static boolean HAS_PLUGMAN, HAS_SERVER_UTILS;
     private final static SimplePluginManager pm = (SimplePluginManager) Bukkit.getPluginManager();
     private final Path pluginsDir;
 
     private final NekoMaid main;
 
     static {
-        boolean flag = false;
+        boolean flag = false, flag2 = false;
         try {
             Class.forName("com.rylinaux.plugman.util.PluginUtil");
             flag = true;
         } catch (Throwable ignored) { }
+        try {
+            Class.forName("net.frankheijden.serverutils.bukkit.ServerUtils");
+            flag2 = true;
+        } catch (Throwable ignored) { }
         HAS_PLUGMAN = flag;
+        HAS_SERVER_UTILS = flag2;
+    }
+
+    /** Invokes a ServerUtils plugin-manager method via reflection (no compile-time dependency,
+     *  AGENTS.md §4: probe first, then try-catch the call). Returns false on any failure. */
+    private static boolean serverUtilsInvoke(String method, Object arg) {
+        try {
+            Class<?> su = Class.forName("net.frankheijden.serverutils.bukkit.ServerUtils");
+            Object instance = su.getMethod("getInstance").invoke(null);
+            Object plugin = instance.getClass().getMethod("getPlugin").invoke(instance);
+            Object manager = plugin.getClass().getMethod("getPluginManager").invoke(plugin);
+            Object result = manager.getClass().getMethod(method, arg.getClass()).invoke(manager, arg);
+            return result == null || Boolean.TRUE.equals(result);
+        } catch (Throwable e) {
+            return false;
+        }
     }
 
     @SuppressWarnings({"MismatchedQueryAndUpdateOfCollection", "unused"})
@@ -60,7 +80,7 @@ final class Plugins implements Listener {
 
     public Plugins(NekoMaid main) {
         this.main = main;
-        main.GLOBAL_DATA.put("canLoadPlugin", HAS_PLUGMAN);
+        main.GLOBAL_DATA.put("canLoadPlugin", HAS_PLUGMAN || HAS_SERVER_UTILS);
         File dir;
         try {
             dir = (File) SimplePluginManager.class.getDeclaredField("pluginsDirectory").get(pm);
@@ -76,14 +96,18 @@ final class Plugins implements Listener {
                         String it = (String) args[0], name = it.replaceAll("\\.jar$", "");
                         Plugin pl = getPlugin(it);
                         if (pl == null) {
-                            if (HAS_PLUGMAN) PluginUtil.load(name);
+                            if (HAS_SERVER_UTILS) serverUtilsInvoke("loadPlugin",
+                                    new File(pluginsDir.toFile(), name + ".jar"));
+                            else if (HAS_PLUGMAN) PluginUtil.load(name);
                             else return false;
                             return pm.getPlugin((String) args[1]) != null;
                         } else if (pm.isPluginEnabled(pl)) {
-                            if (HAS_PLUGMAN) PluginUtil.unload(pl);
+                            if (HAS_SERVER_UTILS) serverUtilsInvoke("unloadPlugin", pl);
+                            else if (HAS_PLUGMAN) PluginUtil.unload(pl);
                             else pm.disablePlugin(pl);
                         } else {
-                            if (HAS_PLUGMAN) PluginUtil.load(name);
+                            if (HAS_SERVER_UTILS) serverUtilsInvoke("enablePlugin", pl);
+                            else if (HAS_PLUGMAN) PluginUtil.load(name);
                             else pm.enablePlugin(pl);
                         }
                         refresh();
@@ -100,7 +124,8 @@ final class Plugins implements Listener {
                         if (it.endsWith(".jar")) {
                             Plugin pl = getPlugin(it);
                             if (pl != null) {
-                                if (HAS_PLUGMAN) PluginUtil.unload(pl);
+                                if (HAS_SERVER_UTILS) serverUtilsInvoke("unloadPlugin", pl);
+                                else if (HAS_PLUGMAN) PluginUtil.unload(pl);
                                 else return false;
                             }
                             Files.move(file, pluginsDir.resolve(it + ".disabled"));

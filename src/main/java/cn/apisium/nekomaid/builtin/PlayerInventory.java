@@ -22,7 +22,22 @@ import java.util.concurrent.TimeUnit;
 final class PlayerInventory {
     private boolean hasOpenInv, hasInvSee;
     public PlayerInventory(NekoMaid main) {
-        if (main.getServer().getPluginManager().getPlugin("OpenInv") == null) {
+        // AGENTS.md §4: probe the API classes before any cast. Major plugin versions change
+        // package names (e.g. Multiverse 4.x -> 5.x); a failed probe disables the integration
+        // instead of crashing the Netty thread.
+        boolean hasOpenInvApi = false, hasInvSeeApi = false;
+        try {
+            Class.forName("com.lishid.openinv.IOpenInv");
+            hasOpenInvApi = true;
+        } catch (Throwable ignored) { }
+        try {
+            Class.forName("com.janboerman.invsee.spigot.InvseePlusPlus");
+            hasInvSeeApi = true;
+        } catch (Throwable ignored) { }
+        if (hasOpenInvApi && main.getServer().getPluginManager().getPlugin("OpenInv") != null) {
+            hasOpenInv = true;
+            main.GLOBAL_DATA.put("hasOfflineInventorySupport", true);
+        } else if (hasInvSeeApi) {
             Plugin plugin = main.getServer().getPluginManager().getPlugin("InvSeePlusPlus");
             try {
                 if (plugin != null && ((InvseePlusPlus) plugin).offlinePlayerSupport()) {
@@ -32,9 +47,6 @@ final class PlayerInventory {
             } catch (Throwable e) {
                 if (main.isDebug()) e.printStackTrace();
             }
-        } else {
-            hasOpenInv = true;
-            main.GLOBAL_DATA.put("hasOfflineInventorySupport", true);
         }
         main.onConnected(main, client -> {
             if (!client.hasPermission("inventory")) return; // secondary tokens: no inventory editing
