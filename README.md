@@ -7,13 +7,13 @@
 - **开箱即用**：把 `NekoMaid.jar` 丢进 `plugins/` 就能用 —— 面板前端内置在 jar 里（首次启动自动解包），未配置证书时自动生成自签证书并以 HTTPS 提供服务。**不需要 nginx、不需要证书、不需要单独部署前端、不需要改任何配置。**
 - **移除 Uniporter 依赖**：内置独立 Netty HTTP 服务器（`NekoMaidHttpServer`），不再需要任何前置插件。
 - **单端口复用（可选）**：可让面板与 Minecraft **共用同一个对外端口**，按 TCP 首包嗅探分流（浏览器走 HTTPS，玩家走 Minecraft，对玩家完全透明）。
-- **兼容 PaperMC 26.2**：移除 NMS 反射，适配新 API。
+- **兼容 PaperMC 1.21.11**：移除 NMS 反射，适配新 API。
 - **多 token + 每 token 独立 TOTP 二步验证**：主 token 全权限，副 token 按白名单权限受限。
-- **版本线**：本分支面向 **Paper 26.2**（最低 Java 25）；Paper 1.21.11（Java 21）版本见 `1.21.11` 分支。
+- **版本线**：本分支面向 **Paper 1.21.11**（最低 Java 21）；Paper 26.2（Java 25）版本见 `master` 分支。
 
 ## Requirements
 
-- Paper 26.2+（需 Java 25 运行）
+- Paper 1.21.11（最低 Java 21；本分支用 JDK 25 以 `--release 21` 编译，产物 class 版本 65，兼容 Java 21 运行时）
 - 无必需前置插件；以下为可选集成（`softdepend`）：Vault、NBTAPI、OpenInv、InvSeePlusPlus、PlugMan、PlaceholderAPI、Multiverse-Core
 
 ## Quick start
