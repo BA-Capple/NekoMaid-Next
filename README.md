@@ -26,8 +26,14 @@
    [NekoMaid] Web panel listening on https://0.0.0.0:8443
    ```
 
-3. 浏览器打开 `https://<服务器IP>:8443/`。首次访问会提示证书不受信任（自签证书），点一次「继续访问」即可；证书会保存在 `plugins/NekoMaid/self-signed-cert.pem`，之后重启不再变化。
-4. 控制台执行 `/nm` 获取带主令牌的管理地址，首次连接会引导完成二步验证（TOTP）绑定。
+3. 控制台执行 `/nm`，用它输出的**完整链接**打开面板。链接形如
+   `https://<地址>:8443/?<地址>%3A8443%2FNekoMaid%3F<token>` —— **末尾那个 `?` 参数必须带着**，
+   否则前端会停在「连接到服务器 / 请输入服务器地址」界面（看起来就像面板没功能）。
+4. 首次访问会提示证书不受信任（自签证书），点一次「继续访问」即可；证书保存在
+   `plugins/NekoMaid/self-signed-cert.pem`，之后重启不再变化。
+5. 首次连接会引导完成二步验证（TOTP）绑定。
+
+> 直接打开裸地址（`https://<服务器IP>:8443/`）会自动跳转到带上参数的地址，但**没有令牌时前端仍要求手动输入地址与令牌**。日常请使用第 3 步的完整链接；`/nm temp` 可生成 60 分钟有效、免二步验证的临时链接。
 
 想用真实证书（去掉浏览器警告）：把 PEM 证书链和私钥路径填进 `tls.certificate` / `tls.private-key`，私钥支持 PKCS#8（`PRIVATE KEY`）、SEC1（`EC PRIVATE KEY`）、PKCS#1（`RSA PRIVATE KEY`）三种格式 —— openssl / nginx / Let's Encrypt 产出的都能直接读。
 
