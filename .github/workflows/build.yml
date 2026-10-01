@@ -20,7 +20,23 @@ jobs:
       - name: Install panel dependencies
         run: npm ci --legacy-peer-deps --omit=optional --no-audit --no-fund
       - name: Generate Minecraft language resources
-        run: npm run gen:minecraft:language
+        run: |
+          set -euo pipefail
+          retry=(--retry 5 --retry-delay 2 --retry-all-errors --connect-timeout 20)
+          curl -fsSL "${retry[@]}" -o /tmp/manifest.json https://piston-meta.mojang.com/mc/game/version_manifest_v2.json
+          version_url=$(jq -r '.versions[] | select(.id=="26.2") | .url' /tmp/manifest.json | head -1)
+          test -n "$version_url"
+          curl -fsSL "${retry[@]}" -o /tmp/version.json "$version_url"
+          asset_index_url=$(jq -r '.assetIndex.url' /tmp/version.json)
+          curl -fsSL "${retry[@]}" -o /tmp/assets.json "$asset_index_url"
+          mkdir -p languages/minecraft
+          for language in zh_cn en_gb; do
+            hash=$(jq -r --arg path "minecraft/lang/$language.json" '.objects[$path].hash' /tmp/assets.json)
+            test -n "$hash" && test "$hash" != null
+            curl -fsSL "${retry[@]}" -o "languages/minecraft/$language.json" \
+              "https://resources.download.minecraft.net/${hash:0:2}/$hash"
+          done
+          cp languages/minecraft/en_gb.json languages/minecraft/en_us.json
       - name: Check types
         run: npx tsc --noEmit --emitDeclarationOnly false
       - name: Build panel
