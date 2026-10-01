@@ -4,9 +4,8 @@ import { UnControlled } from 'react-codemirror2'
 import { useTheme } from '@mui/material/styles'
 import { useGlobalData, usePlugin } from '../Context'
 import { parseComponent, stringifyTextComponent } from '../utils'
-import MojangSON, { parse, stringify, Int, Byte, Short } from 'nbt-ts'
+import MojangSON, { parse, stringify, Int, Byte } from 'nbt-ts'
 import { lang, minecraft } from '../../languages'
-import set from 'lodash/set'
 import icons from '../../minecraftIcons.json'
 
 import Dialog from '@mui/material/Dialog'
@@ -63,14 +62,22 @@ export interface Tag extends MojangSON.TagObject {
 }
 
 export interface NBT extends MojangSON.TagObject {
-  Count: MojangSON.Byte
+  Count?: MojangSON.Byte
+  count?: MojangSON.Int
   id: string
   tag?: Tag
+  components?: MojangSON.TagObject
 }
 
 export interface Item {
   type: string
   name?: string
+  nameComponent?: string
+  loreComponents?: string[]
+  enchantments?: Record<string, number>
+  damage?: number
+  unbreakable?: boolean
+  structured?: boolean
   icon?: string
   hasEnchants?: boolean
   amount?: number
@@ -160,7 +167,14 @@ const ItemViewer: React.FC<ItemViewerProps> = ({ item, data, onDrag, onDrop, onE
         ? e => {
           e.dataTransfer.effectAllowed = 'copyMove'
           e.dataTransfer.setData('application/json', JSON.stringify({ item, data }))
-          onDrag(data)
+        }
+        : undefined}
+      onDragEnd={onDrag
+        ? e => {
+          // Only mutate the source after a real drop. A cancelled drag reports "none" and
+          // therefore leaves the source untouched. Server inventories pass a no-op here because
+          // their source/target swap is performed atomically by the backend.
+          if (e.dataTransfer.dropEffect !== 'none') onDrag(data)
         }
         : undefined}
       style={{
@@ -203,18 +217,20 @@ const ItemViewer: React.FC<ItemViewerProps> = ({ item, data, onDrag, onDrop, onE
     </div>}
     {item && item.amount && item.amount > 1 ? <span>{item.amount}</span> : null}
   </Paper>
-  const nbtTexts = nbt
-    ? <>
-      {nbt.tag?.display?.Lore?.map((it, i) => <React.Fragment key={i}>{parseComponent(JSON.parse(it))}<br /></React.Fragment>)}
-      {nbt.tag?.Enchantments?.length
-        ? nbt.tag?.Enchantments.map((it, i) => <React.Fragment key={i}><br />{getEnchantmentName(it)}</React.Fragment>)
-        : null}
-      {nbt.tag?.Unbreakable?.value === 1 && <><br />{minecraft['item.unbreakable']}</>}
-    </>
-    : null
+  const lore = item?.loreComponents || nbt?.tag?.display?.Lore
+  const itemEnchantments = item?.enchantments
+  const nbtTexts = <>
+    {lore?.map((it, i) => <React.Fragment key={i}>{parseComponent(JSON.parse(it))}<br /></React.Fragment>)}
+    {itemEnchantments
+      ? Object.entries(itemEnchantments).map(([id, level]) => <React.Fragment key={id}><br />{getEnchantmentName(id)} {level}</React.Fragment>)
+      : nbt?.tag?.Enchantments?.map((it, i) => <React.Fragment key={i}><br />{getEnchantmentName(it)}</React.Fragment>)}
+    {(item?.unbreakable || nbt?.tag?.Unbreakable?.value === 1) && <><br />{minecraft['item.unbreakable']}</>}
+  </>
   return item
     ? <Tooltip title={<>
-      <h3 style={{ margin: 0 }}>{nbt?.tag?.display?.Name
+      <h3 style={{ margin: 0 }}>{item.nameComponent
+        ? parseComponent(JSON.parse(item.nameComponent))
+        : nbt?.tag?.display?.Name
         ? parseComponent(JSON.parse(nbt.tag.display.Name))
         : item.name ? parseComponent(item.name) : getName(lowerCase)}</h3>
       {nbtTexts}
@@ -243,7 +259,12 @@ const ItemEditor: React.FC = () => {
   const [level, setLevel] = useState(1)
   const [enchantment, setEnchantment] = useState<string | undefined>()
   const [nbtText, setNBTText] = useState('')
-  const nbt: NBT = item?.nbt ? parse(item.nbt) : { id: 'minecraft:' + (item?.type || 'air').toLowerCase(), Count: new Byte(1) } as any
+  const [nbtError, setNBTError] = useState(false)
+  let nbt: NBT
+  try { nbt = item?.nbt ? parse(item.nbt) as NBT : { id: 'minecraft:' + (item?.type || 'air').toLowerCase(), count: new Int(1) } }
+  catch { nbt = { id: 'minecraft:' + (item?.type || 'air').toLowerCase(), count: new Int(1) } }
+  const modern = 'count' in nbt || 'components' in nbt
+  const activeTab = tab
   useEffect(() => {
     if (!item || types.length) return
     plugin.emit('item:fetch', (a: string[], b: string[]) => {
@@ -254,7 +275,9 @@ const ItemEditor: React.FC = () => {
   useEffect(() => {
     _setItem = (it: any) => {
       setItem(it)
-      setNBTText(it.nbt ? stringify(parse(it.nbt), { pretty: true }) : '')
+      setNBTError(false)
+      try { setNBTText(it.nbt ? stringify(parse(it.nbt), { pretty: true }) : '') }
+      catch { setNBTText(it.nbt || ''); setNBTError(true) }
     }
     return () => { _setItem = null }
   }, [])
@@ -274,7 +297,10 @@ const ItemEditor: React.FC = () => {
     setItem(newItem)
   }
   const isAir = item?.type === 'AIR'
-  const name = nbt?.tag?.display?.Name
+  const name = item?.nameComponent || nbt?.tag?.display?.Name
+  const lore = item?.loreComponents || nbt?.tag?.display?.Lore || []
+  const currentEnchantments: Record<string, number> = item?.enchantments || Object.fromEntries(
+    (nbt?.tag?.Enchantments || []).map(it => [it.id, it.lvl.value]))
   const enchantmentMap: Record<string, true> = { }
   return <Dialog open={!!item} onClose={cancel}>
     <DialogTitle>{lang.itemEditor.title}</DialogTitle>
@@ -297,21 +323,25 @@ const ItemEditor: React.FC = () => {
           renderInput={(params) => <TextField {...params} label={lang.itemEditor.itemType} size='small' variant='standard' />}
         />
       </Box>}
-      <Tabs centered value={tab} onChange={(_, it) => setTab(it)} sx={{ marginBottom: 2 }}>
+      <Tabs centered value={activeTab} onChange={(_, it) => setTab(it)} sx={{ marginBottom: 2 }}>
         <Tab label={lang.itemEditor.baseAttribute} disabled={isAir} />
         <Tab label={minecraft['container.enchant']} disabled={isAir} />
         <Tab label='NBT' disabled={isAir} />
       </Tabs>
-      {nbt && tab === 0 && <Grid container spacing={1} rowSpacing={1}>
+      {nbt && activeTab === 0 && <Grid container spacing={1} rowSpacing={1}>
         <Grid item xs={12} md={6}><TextField
           fullWidth
           label={lang.itemEditor.count}
           type='number'
           variant='standard'
-          value={nbt.Count}
+          value={item?.amount ?? (modern ? nbt.count?.value : nbt.Count?.value) ?? 1}
           disabled={isAir}
           onChange={e => {
-            nbt.Count = new Byte(item!.amount = parseInt(e.target.value))
+            const amount = Math.max(1, parseInt(e.target.value) || 1)
+            item!.amount = amount
+            item!.structured = true
+            if (modern) nbt.count = new Int(amount)
+            else nbt.Count = new Byte(amount)
             update()
           }}
         /></Grid>
@@ -320,11 +350,10 @@ const ItemEditor: React.FC = () => {
           label={lang.itemEditor.damage}
           type='number'
           variant='standard'
-          value={nbt.tag?.Damage}
+          value={item?.damage ?? nbt.tag?.Damage?.value ?? 0}
           disabled={isAir}
           onChange={e => {
-            set(nbt, 'tag.Damage', parseInt(e.target.value))
-            update()
+            setItem({ ...item!, damage: Math.max(0, parseInt(e.target.value) || 0), structured: true })
           }}
         /></Grid>
         <Grid item xs={12} md={6}>
@@ -335,19 +364,18 @@ const ItemEditor: React.FC = () => {
             disabled={isAir}
             value={name ? stringifyTextComponent(JSON.parse(name)) : ''}
             onChange={e => {
-              set(nbt, 'tag.display.Name', JSON.stringify(item!.name = e.target.value))
-              update()
+              const text = e.target.value
+              setItem({ ...item!, name: text, nameComponent: text ? JSON.stringify(text) : undefined, structured: true })
             }}
           />
           <FormControlLabel
             label={minecraft['item.unbreakable']}
             disabled={isAir}
-            checked={nbt.tag?.Unbreakable?.value === 1}
+            checked={item?.unbreakable ?? nbt.tag?.Unbreakable?.value === 1}
             control={<Checkbox
-              checked={nbt.tag?.Unbreakable?.value === 1}
+              checked={item?.unbreakable ?? nbt.tag?.Unbreakable?.value === 1}
               onChange={e => {
-                set(nbt, 'tag.Unbreakable', new Byte(+e.target.checked))
-                update()
+                setItem({ ...item!, unbreakable: e.target.checked, structured: true })
               }} />
             }
           />
@@ -359,19 +387,23 @@ const ItemEditor: React.FC = () => {
           variant='standard'
           maxRows={5}
           disabled={isAir}
-          value={nbt.tag?.display?.Lore?.map(l => stringifyTextComponent(JSON.parse(l)))?.join('\n') || ''}
+          value={lore.map(l => stringifyTextComponent(JSON.parse(l))).join('\n')}
           onChange={e => {
-            set(nbt, 'tag.display.Lore', e.target.value.split('\n').map(text => JSON.stringify(text)))
-            update()
+            setItem({
+              ...item!,
+              loreComponents: e.target.value ? e.target.value.split('\n').map(text => JSON.stringify(text)) : [],
+              structured: true
+            })
           }}
         /></Grid>
       </Grid>}
-      {nbt && tab === 1 && <Grid container spacing={1} sx={{ width: '100%' }}>
-        {nbt.tag?.Enchantments?.map((it, i) => {
-          enchantmentMap[it.id] = true
-          return <Grid item key={i}><Chip label={getEnchantmentName(it)} onDelete={() => {
-            nbt?.tag?.Enchantments?.splice(i, 1)
-            update()
+      {nbt && activeTab === 1 && <Grid container spacing={1} sx={{ width: '100%' }}>
+        {Object.entries(currentEnchantments).map(([id, enchantLevel]) => {
+          enchantmentMap[id] = true
+          return <Grid item key={id}><Chip label={`${getEnchantmentName(id)} ${enchantLevel}`} onDelete={() => {
+            const next = { ...currentEnchantments }
+            delete next[id]
+            setItem({ ...item!, enchantments: next, structured: true })
           }} /></Grid>
         })}
         <Grid item><Chip label={lang.itemEditor.newEnchantment} color='primary' onClick={() => {
@@ -408,18 +440,18 @@ const ItemEditor: React.FC = () => {
           <DialogActions>
             <Button onClick={() => setEnchantment(undefined)}>{minecraft['gui.cancel']}</Button>
             <Button disabled={!enchantment || isNaN(level)} onClick={() => {
-              if (nbt) {
-                if (!nbt.tag) nbt.tag = { Damage: new Int(0) }
-                ;(nbt.tag.Enchantments || (nbt.tag.Enchantments = [])).push({ id: enchantment!, lvl: new Short(level) })
-              }
+                setItem({
+                  ...item!,
+                  enchantments: { ...currentEnchantments, [enchantment!]: level },
+                  structured: true
+                })
               setEnchantment(undefined)
-              update()
             }}>{minecraft['gui.ok']}</Button>
           </DialogActions>
         </Dialog>
       </Grid>}
     </DialogContent>
-    {nbt && tab === 2 && <Box sx={{
+    {nbt && activeTab === 2 && <Box sx={{
       '& .CodeMirror': { width: '100%' },
       '& .CodeMirror-dialog, .CodeMirror-scrollbar-filler': { backgroundColor: theme.palette.background.paper + '!important' }
     }}>
@@ -431,16 +463,22 @@ const ItemEditor: React.FC = () => {
           theme: theme.palette.mode === 'dark' ? 'material' : 'one-light'
         }}
         onChange={(_: any, __: any, nbt: string) => {
-          const n = parse(nbt) as any as NBT
-          const newItem: any = { ...item, nbt }
-          if (n.Count?.value != null) newItem.amount = n.Count.value
-          setItem(newItem)
+          setNBTText(nbt)
+          try {
+            const n = parse(nbt) as NBT
+            const newItem: Item = { ...item!, nbt, structured: false }
+            if (n.count?.value != null) newItem.amount = n.count.value
+            else if (n.Count?.value != null) newItem.amount = n.Count.value
+            setItem(newItem)
+            setNBTError(false)
+          } catch { setNBTError(true) }
         }}
       />
+      {nbtError && <Box color='error.main'>Invalid NBT</Box>}
     </Box>}
     <DialogActions>
       <Button onClick={cancel}>{minecraft['gui.cancel']}</Button>
-      <Button onClick={() => {
+      <Button disabled={nbtError} onClick={() => {
         setItem(undefined)
         if (_resolve) {
           _resolve(!item || item.type === 'AIR' ? null : item)

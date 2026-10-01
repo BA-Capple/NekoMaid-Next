@@ -59,6 +59,7 @@ public final class NekoMaid extends JavaPlugin implements Listener {
     private NekoMaidHttpServer httpServer;
     private EngineIoServer engineIoServer;
     private final ConcurrentHashMap<SocketIoSocket, String[]> pages = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<SocketIoSocket, String> activeTokens = new ConcurrentHashMap<>();
     private final HashMap<SocketIoSocket, HashMap<String, Client>> clients = new HashMap<>();
     private final Cache<String, Boolean> tempTokens = CacheBuilder.newBuilder().maximumSize(10)
             .expireAfterWrite(60, TimeUnit.MINUTES).build();
@@ -169,6 +170,11 @@ public final class NekoMaid extends JavaPlugin implements Listener {
             boolean primary = false;
             Map<String, Object> tokenEntry = getTokenEntry(token);
             boolean isTemp = tokenEntry == null && tempTokens.getIfPresent(token) != null;
+            if (tokenEntry == null && !isTemp) {
+                client.send("!");
+                client.disconnect(false);
+                return;
+            }
             if (tokenEntry != null) {
                 Object s = tokenEntry.get("secret");
                 secret = s instanceof String ? (String) s : null;
@@ -214,10 +220,12 @@ public final class NekoMaid extends JavaPlugin implements Listener {
                 if (tokenEntry != null && Boolean.TRUE.equals(tokenEntry.get("allowNo2fa"))) {
                     // no-op: fall through to the normal connection path below (no 2fa).
                 } else {
+                    client.once("disconnect", args -> clients.remove(client));
                     beginTwoFactorSetup(client, token);
                     return;
                 }
             }
+            activeTokens.put(client, token);
             Client connectedClient = getClient("NekoMaid", client);
             connectedClient.primary = primary;
             connectedClient.player = tokenEntry == null ? null : (String) tokenEntry.get("player");
@@ -243,6 +251,7 @@ public final class NekoMaid extends JavaPlugin implements Listener {
             client.once("disconnect", args -> {
                 pages.remove(client);
                 clients.remove(client);
+                activeTokens.remove(client);
             }).on("switchPage", args -> {
                 try {
                     String[] oldPageObj = pages.get(client);
@@ -257,7 +266,10 @@ public final class NekoMaid extends JavaPlugin implements Listener {
                                     .accept(wrappedClient = getClient(oldPageObj[0], client));
                         }
                     }
+                    if (args.length < 2 || !(args[0] instanceof String) || !(args[1] instanceof String)) return;
                     String namespace = (String) args[0], page = (String) args[1];
+                    if ("NekoMaid".equals(namespace) && "console".equals(page)
+                            && !getClient(namespace, client).hasPermission("terminal")) return;
                     pages.put(client, new String[]{ namespace, page });
                     client.joinRoom(namespace + ":page:" + page);
                     HashMap<String, AbstractMap.SimpleEntry<Consumer<Client>, Consumer<Client>>> pages = pluginPages.get(namespace);
@@ -362,6 +374,9 @@ public final class NekoMaid extends JavaPlugin implements Listener {
     /** Revokes the op player's secondary token (called on deop). */
     private void revokeOpToken(@NotNull String playerName) {
         List<Map<String, Object>> tokens = getTokenList();
+        tokens.stream().filter(m -> !Boolean.TRUE.equals(m.get("primary"))
+                && playerName.equalsIgnoreCase(String.valueOf(m.get("player"))))
+                .forEach(m -> invalidateTokenSessions(String.valueOf(m.get("token"))));
         boolean removed = tokens.removeIf(m -> !Boolean.TRUE.equals(m.get("primary"))
                 && playerName.equalsIgnoreCase(String.valueOf(m.get("player"))));
         if (removed) {
@@ -431,7 +446,8 @@ public final class NekoMaid extends JavaPlugin implements Listener {
         });
         registerCommand(this, "invalidate", (sender, command, label, args) -> {
             if (!sender.hasPermission("neko.maid.admin")) return noPermission(sender);
-            tempTokens.cleanUp();
+            for (String token : new ArrayList<>(tempTokens.asMap().keySet())) invalidateTokenSessions(token);
+            tempTokens.invalidateAll();
             sender.sendMessage(SUCCESS);
             return true;
         });
@@ -590,7 +606,11 @@ public final class NekoMaid extends JavaPlugin implements Listener {
                             return true;
                         }
                         List<Map<String, Object>> tokens = getTokenList();
-                        boolean removed = tokens.removeIf(m -> args[1].equals(m.get("name")));
+                        boolean removed = tokens.removeIf(m -> {
+                            if (!args[1].equals(m.get("name"))) return false;
+                            invalidateTokenSessions(String.valueOf(m.get("token")));
+                            return true;
+                        });
                         if (!removed) {
                             sender.sendMessage(ChatColor.RED + "[NekoMaid] No token named '" + args[1] + "'.");
                             return true;
@@ -694,11 +714,10 @@ public final class NekoMaid extends JavaPlugin implements Listener {
     }
 
     /** Updates the permission set of a named secondary token. */
-    @SuppressWarnings("unchecked")
     private boolean updateTokenPermissions(Object[] args) {
-        if (args.length < 2 || !(args[1] instanceof java.util.List)) return false;
+        if (args.length < 2 || !(args[1] instanceof JSONArray || args[1] instanceof java.util.List)) return false;
         String name = String.valueOf(args[0]);
-        List<?> requested = (List<?>) args[1];
+        List<?> requested = args[1] instanceof JSONArray ? ((JSONArray) args[1]).toList() : (List<?>) args[1];
         Set<String> perms = new HashSet<>();
         for (Object o : requested) if (o instanceof String) perms.add((String) o);
         perms.removeIf(it -> !KNOWN_PERMISSIONS.contains(it)); // whitelist known features
@@ -712,6 +731,7 @@ public final class NekoMaid extends JavaPlugin implements Listener {
                 else m.remove("allowNo2fa");
                 getConfig().set("tokens", tokens);
                 saveConfig();
+                invalidateTokenSessions(String.valueOf(m.get("token")));
                 return true;
             }
         }
@@ -745,7 +765,7 @@ public final class NekoMaid extends JavaPlugin implements Listener {
 
     /** Every feature permission a secondary token can be granted (whitelist for panel updates). */
     private static final Set<String> KNOWN_PERMISSIONS = Set.of(
-            "dashboard", "playerList", "players", "worlds", "profiler", "scheduler", "entity", "block",
+            "dashboard", "playerList", "players", "worlds", "worlds:write", "profiler", "scheduler", "entity", "block",
             "terminal", "plugins", "files", "config", "editors", "vault", "inventory");
 
     /** /nm subcommands that read or modify NekoMaid's own config (primary-bound player only). */
@@ -819,6 +839,7 @@ public final class NekoMaid extends JavaPlugin implements Listener {
         primary.put("secret", secret == null ? "" : secret);
         getConfig().set("tokens", getTokenList());
         saveConfig();
+        invalidateTokenSessions(String.valueOf(primary.get("token")));
     }
 
     /** Migrates the legacy `token` + `two-factor.secret` config into the unified tokens list. */
@@ -903,6 +924,14 @@ public final class NekoMaid extends JavaPlugin implements Listener {
         return getTokenEntry(token) != null || tempTokens.getIfPresent(token) != null;
     }
 
+    /** Any change in authentication policy immediately expires sessions and live sockets. */
+    private void invalidateTokenSessions(@NotNull String token) {
+        sessions.asMap().entrySet().removeIf(entry -> token.equals(entry.getValue().token));
+        activeTokens.forEach((socket, activeToken) -> {
+            if (token.equals(activeToken)) socket.disconnect(false);
+        });
+    }
+
     /**
      * Best-effort source IP of a socket.io client. Prefers X-Real-IP (set by nginx to
      * $remote_addr, so it overwrites any client-supplied value); falls back to the last
@@ -955,6 +984,7 @@ public final class NekoMaid extends JavaPlugin implements Listener {
                 m.put("secret", secret);
                 getConfig().set("tokens", tokens);
                 saveConfig();
+                invalidateTokenSessions(token);
                 getLogger().info("Two-factor secret configured for token " + m.get("name"));
                 return true;
             }
@@ -966,33 +996,18 @@ public final class NekoMaid extends JavaPlugin implements Listener {
         return httpServer != null ? httpServer.getPort() : getConfig().getInt("port", 12334);
     }
 
-    /** Address a browser last used to reach the panel; {@code null} until one does. */
-    private volatile String panelAddress;
-    /** Whether that last visit arrived over TLS. */
-    private volatile boolean panelAddressSecure;
-
-    /**
-     * Remembers the address a browser used to reach the panel. Loopback visits are ignored — they
-     * say nothing about how the panel is reached from elsewhere. This is what lets /nekomaid hand
-     * out a working link on any IP, domain or port without being configured for one.
-     */
+    /** Kept for binary compatibility; request Host headers must not influence credential URLs. */
     public void rememberPanelAddress(@NotNull String host, boolean secure) {
-        String value = host.trim();
-        if (value.isEmpty() || value.startsWith("127.") || value.startsWith("localhost")
-                || value.startsWith("[::1]")) return;
-        panelAddress = value;
-        panelAddressSecure = secure;
     }
 
     /** Scheme plus address the panel is reachable at, as far as it can be determined. */
     @NotNull
     public String panelOrigin() {
-        String address = panelAddress;
-        if (address != null && !address.isEmpty()) {
-            return (panelAddressSecure ? "https://" : "http://") + address;
-        }
-        boolean secure = httpServer != null && httpServer.isPrimarySecure();
-        return (secure ? "https://" : "http://") + localAddress() + ":" + getConnectPort();
+        boolean secure = getConfig().getBoolean("tls.enabled", true);
+        String configured = getConfig().getString("hostname", "");
+        String host = configured == null ? "" : configured.trim();
+        if (host.isEmpty() || "auto".equalsIgnoreCase(host)) host = localAddress();
+        return (secure ? "https://" : "http://") + (host.contains(":") ? host : host + ":" + getConnectPort());
     }
 
     /** First usable non-loopback IPv4 address, used until a browser has visited the panel. */
@@ -1019,8 +1034,7 @@ public final class NekoMaid extends JavaPlugin implements Listener {
     public String getConnectHostname(int port, @Nullable String token) {
         String configured = getConfig().getString("hostname", "");
         String host = configured == null ? "" : configured.trim();
-        // Empty (or "auto") means: work it out from what browsers actually used, falling back to
-        // this machine's LAN address.
+        // A credential URL is built only from operator config or the local interface.
         if (host.isEmpty() || "auto".equalsIgnoreCase(host)) host = panelOrigin().replaceFirst("^https?://", "");
         return (host.contains(":") ? host : host + ":" + port) + "/NekoMaid" + (token == null ? "" : "?" + token);
     }

@@ -86,7 +86,11 @@ public final class FilesManager {
             try {
                 if (args.length != 2 && args.length != 3) return null;
                 Path p = resolveInsideRoot((String) args[0], client);
-                if (args.length == 2) return Utils.deletePath(p);
+                if (args.length == 2) {
+                    if (p.equals(root)) return false;
+                    validateSubtree(p, client);
+                    return Utils.deletePath(p);
+                }
                 else if (args[1] != null && !Files.isDirectory(p, NOFOLLOW_LINKS)) {
                     Files.write(p, ((String) args[1]).getBytes(StandardCharsets.UTF_8));
                 } else return false;
@@ -107,6 +111,7 @@ public final class FilesManager {
                 Path p0 = resolveInsideRoot((String) args[0], client);
                 Path p1 = resolveInsideRoot((String) args[1], client);
                 if (!Files.exists(p0, NOFOLLOW_LINKS) || p0.equals(root) || p1.equals(root) || p0.equals(p1)) return false;
+                validateSubtree(p0, client);
                 Files.move(p0, p1);
                 return true;
             } catch (Throwable ignored) {
@@ -138,12 +143,13 @@ public final class FilesManager {
                 Path p = resolveInsideRoot((String) args[0], client);
                 if (!Files.exists(p, NOFOLLOW_LINKS)) return false;
                 if (args.length == 4) {
+                    validateSubtree(p, client);
                     String ext = (String) args[2];
                     String file = args[1] + "." + ext;
                     Path outputName = Paths.get(file);
                     if (outputName.isAbsolute() || outputName.getNameCount() != 1) return false;
                     Path parent = p.equals(root) ? root : p.getParent();
-                    Path outFile = validateInsideRoot(parent.resolve(outputName));
+                    Path outFile = validateInsideRoot(parent.resolve(outputName), client);
                     if (Files.exists(outFile, NOFOLLOW_LINKS)) return false;
                     try (ArchiveOutputStream os = archiveFactory.createArchiveOutputStream((String) args[2],
                             Files.newOutputStream(outFile))) {
@@ -151,6 +157,7 @@ public final class FilesManager {
                             Files.walkFileTree(p, new SimpleFileVisitor<Path>() {
                                 @Override
                                 public FileVisitResult visitFile(Path f, BasicFileAttributes attrs) throws IOException {
+                                    validateInsideRoot(f, client);
                                     addEntry(ext, os, parent, f);
                                     return FileVisitResult.CONTINUE;
                                 }
@@ -171,7 +178,7 @@ public final class FilesManager {
                                         + archiveEntry.getName());
                                 continue;
                             }
-                            outputFile = validateInsideRoot(outputFile);
+                            outputFile = validateInsideRoot(outputFile, client);
                             if (archiveEntry.isDirectory()) {
                                 Files.createDirectories(outputFile);
                                 continue;
@@ -190,8 +197,12 @@ public final class FilesManager {
             try {
                 Path p1 = resolveInsideRoot((String) args[0], client);
                 Path p2 = resolveInsideRoot((String) args[1], client);
-                if (Files.exists(p1, NOFOLLOW_LINKS) && Files.isDirectory(p2, NOFOLLOW_LINKS))
+                if (Files.exists(p1, NOFOLLOW_LINKS) && Files.isDirectory(p2, NOFOLLOW_LINKS)) {
+                    validateSubtree(p1, client);
+                    validateInsideRoot(p2.resolve(p1.getFileName()), client);
+                    if (Files.isDirectory(p1, NOFOLLOW_LINKS) && p2.startsWith(p1)) return false;
                     return Utils.copyPath(p1, p2);
+                }
             } catch (Throwable ignored) { }
             return false;
         });
@@ -218,7 +229,11 @@ public final class FilesManager {
      * except the player bound to the primary token may access the NekoMaid config directory.
      */
     private Path resolveInsideRoot(String input, Client client) throws IOException {
-        Path p = resolveInsideRoot(input);
+        return validateInsideRoot(resolveInsideRoot(input), client);
+    }
+
+    private Path validateInsideRoot(Path candidate, Client client) throws IOException {
+        Path p = validateInsideRoot(candidate);
         if (!client.primary) {
             for (Path r : protectedRoots) {
                 if (p.startsWith(r)) {
@@ -228,6 +243,22 @@ public final class FilesManager {
             }
         }
         return p;
+    }
+
+    /** Refuse a whole recursive operation if any descendant is protected or a symbolic link. */
+    private void validateSubtree(Path path, Client client) throws IOException {
+        validateInsideRoot(path, client);
+        if (!Files.isDirectory(path, NOFOLLOW_LINKS)) return;
+        Files.walkFileTree(path, new SimpleFileVisitor<Path>() {
+            @Override public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
+                validateInsideRoot(dir, client);
+                return FileVisitResult.CONTINUE;
+            }
+            @Override public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                validateInsideRoot(file, client);
+                return FileVisitResult.CONTINUE;
+            }
+        });
     }
 
     /** Validates a derived path, including paths created while extracting archives. */
@@ -280,6 +311,8 @@ public final class FilesManager {
     }
 
     private static Cache<String, Path> createCache() {
-        return CacheBuilder.newBuilder().maximumSize(5).expireAfterWrite(15, TimeUnit.MINUTES).build();
+        // Capabilities remain short-lived and single-purpose, but ordinary concurrent transfers
+        // must not evict each other after only five requests.
+        return CacheBuilder.newBuilder().maximumSize(512).expireAfterWrite(15, TimeUnit.MINUTES).build();
     }
 }

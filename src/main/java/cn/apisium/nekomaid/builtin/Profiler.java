@@ -37,13 +37,16 @@ import java.lang.management.*;
 import java.lang.reflect.Field;
 import java.util.*;
 import java.util.function.Function;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public final class Profiler implements Listener, NotificationListener {
     private final NekoMaid main;
     private BukkitTask statusTimer, timingsTimer, pluginsTimer;
-    private boolean started, hasData;
+    private volatile boolean started;
+    private boolean hasData;
     private int loaded, unloaded;
     private Object lastTimingsData;
     private static boolean canGetData = true;
@@ -58,6 +61,9 @@ public final class Profiler implements Listener, NotificationListener {
     private final HashMap<String, long[]> lastGc = new HashMap<>();
     private final HashMap<String, HashMap<String, long[]>[]> plugins = new HashMap<>();
     private final ArrayList<NotificationEmitter> emitters = new ArrayList<>();
+    private final AtomicLong heapAllowedAt = new AtomicLong();
+    private final AtomicLong threadsAllowedAt = new AtomicLong();
+    private final AtomicLong entitiesAllowedAt = new AtomicLong();
 
     static {
         try {
@@ -83,12 +89,13 @@ public final class Profiler implements Listener, NotificationListener {
         main.onConnected(main, client -> {
             if (!client.hasPermission("profiler")) return; // secondary tokens: read-only scope
             client.on("profiler:status", args -> {
-                started = (boolean) args[0];
-                if (started) main.GLOBAL_DATA.put("profilerStarted", true);
-                else main.GLOBAL_DATA.remove("profilerStarted");
-                main.broadcast(main, "profiler:status", started);
-                checkTask();
+                boolean requested = (boolean) args[0];
+                Utils.sync(() -> {
+                    setProfilerStarted(requested);
+                    return null;
+                });
             }).onWithMultiArgsAck("profiler:heap", args -> {
+                if (!acquire(heapAllowedAt, 30)) return new Object[] { null, null };
                 try {
                     Matcher m = HEAP_REGEXP.matcher((String) ManagementFactory.getPlatformMBeanServer()
                             .invoke(ObjectName.getInstance("com.sun.management:type=DiagnosticCommand"),
@@ -131,6 +138,7 @@ public final class Profiler implements Listener, NotificationListener {
                     return new Object[] { null, null };
                 }
             }).onWithMultiArgsAck("profiler:threads", args -> {
+                if (!acquire(threadsAllowedAt, 2)) return new Object[] { null, -1 };
                 Thread t = Utils.getMinecraftServerThread();
                 return new Object[] {
                         Arrays.stream(ManagementFactory.getThreadMXBean()
@@ -155,6 +163,7 @@ public final class Profiler implements Listener, NotificationListener {
                 };
             }).onWithAck("profiler:entities", (Function<Object[], Object>)
                     args -> Utils.sync(() -> {
+                        if (!acquire(entitiesAllowedAt, 5)) return null;
                         HashMap<EntityType, Integer> entities = new HashMap<>();
                         HashMap<Material, Integer> tiles = new HashMap<>();
                         ArrayList<Object[]> arr = new ArrayList<>();
@@ -200,6 +209,26 @@ public final class Profiler implements Listener, NotificationListener {
                 return Timings.INSTANCE.isStarted();
             });
         });
+    }
+
+    private static boolean acquire(AtomicLong gate, long cooldownSeconds) {
+        long now = System.nanoTime();
+        long next = gate.get();
+        if (now < next) return false;
+        return gate.compareAndSet(next, now + TimeUnit.SECONDS.toNanos(cooldownSeconds));
+    }
+
+    /** Starts/stops instrumentation exactly once, even if several clients click simultaneously. */
+    private synchronized void setProfilerStarted(boolean requested) {
+        if (started == requested) {
+            main.broadcast(main, "profiler:status", started);
+            return;
+        }
+        started = requested;
+        if (started) main.GLOBAL_DATA.put("profilerStarted", true);
+        else main.GLOBAL_DATA.remove("profilerStarted");
+        checkTask();
+        main.broadcast(main, "profiler:status", started);
     }
 
     private void checkTask() {
@@ -506,10 +535,7 @@ public final class Profiler implements Listener, NotificationListener {
     }
 
     public void stop() {
-        if (started) {
-            started = false;
-            uninject();
-        }
+        setProfilerStarted(false);
     }
 
     public static final class Status {

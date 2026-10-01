@@ -219,7 +219,7 @@ const BlockEditor: React.FC = () => {
                 {block.inventory.map((it, i) => <React.Fragment key={i}><ItemViewer
                   item={it}
                   data={{ type: InvType.BLOCK, solt: i, ...params }}
-                  onDrag={() => plugin.emit('block:setItem', update, params.world, params.x, params.y, params.z, i, null, -1)}
+                  onDrag={() => {}}
                   onDrop={(item, obj) => plugin.emit('block:setItem', update, params.world, params.x, params.y, params.z, i,
                     JSON.stringify(item), compare(obj, params) ? obj.solt : -1)}
                   onEdit={item => item !== false && plugin.emit('block:setItem', updateWithAction, params.world, params.x, params.y,

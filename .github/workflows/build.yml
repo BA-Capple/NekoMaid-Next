@@ -9,6 +9,39 @@ on:
   workflow_dispatch:
 
 jobs:
+  build-panel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install panel dependencies
+        run: npm ci --legacy-peer-deps --omit=optional --no-audit --no-fund
+      - name: Generate Minecraft language resources
+        run: |
+          set -euo pipefail
+          retry=(--retry 5 --retry-delay 2 --retry-all-errors --connect-timeout 20)
+          curl -fsSL "${retry[@]}" -o /tmp/manifest.json https://piston-meta.mojang.com/mc/game/version_manifest_v2.json
+          version_url=$(jq -r '.versions[] | select(.id=="26.2") | .url' /tmp/manifest.json | head -1)
+          test -n "$version_url"
+          curl -fsSL "${retry[@]}" -o /tmp/version.json "$version_url"
+          asset_index_url=$(jq -r '.assetIndex.url' /tmp/version.json)
+          curl -fsSL "${retry[@]}" -o /tmp/assets.json "$asset_index_url"
+          mkdir -p languages/minecraft
+          for language in zh_cn en_gb; do
+            hash=$(jq -r --arg path "minecraft/lang/$language.json" '.objects[$path].hash' /tmp/assets.json)
+            test -n "$hash" && test "$hash" != null
+            curl -fsSL "${retry[@]}" -o "languages/minecraft/$language.json" \
+              "https://resources.download.minecraft.net/${hash:0:2}/$hash"
+          done
+          cp languages/minecraft/en_gb.json languages/minecraft/en_us.json
+      - name: Check types
+        run: npx tsc --noEmit --emitDeclarationOnly false
+      - name: Build panel
+        run: npm run build
+
   build-plugin:
     runs-on: ubuntu-latest
     permissions:
@@ -23,6 +56,14 @@ jobs:
           distribution: temurin
           java-version: 25
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install icon generator dependencies
+        run: npm ci --legacy-peer-deps --omit=optional --no-audit --no-fund
+
       - name: Set plugin version (from release tag)
         if: github.event_name == 'release'
         run: |
@@ -35,10 +76,14 @@ jobs:
       # Tolerated on failure: the plugin still builds, the panel just loses those icons.
       - name: Fetch Minecraft block/item icons (Mojang assets stay out of the repository)
         continue-on-error: true
+        env:
+          TARGET_BRANCH: ${{ github.base_ref || github.ref_name }}
         run: |
           set -euo pipefail
           curl -fsSL -o /tmp/manifest.json https://piston-meta.mojang.com/mc/game/version_manifest_v2.json
-          url=$(jq -r '.versions[] | select(.id=="26.2" or .id=="1.21.11") | .url' /tmp/manifest.json | head -1)
+          mc_version=26.2
+          if [ "$TARGET_BRANCH" = "1.21.11" ]; then mc_version=1.21.11; fi
+          url=$(jq -r --arg version "$mc_version" '.versions[] | select(.id==$version) | .url' /tmp/manifest.json | head -1)
           if [ -z "$url" ]; then
             url=$(jq -r '[.versions[] | select(.type=="release")][0].url' /tmp/manifest.json)
           fi
@@ -50,6 +95,7 @@ jobs:
           # block first, then item, so an item texture wins where both exist
           cp -rn /tmp/mcassets/assets/minecraft/textures/block/. src/main/resources/static/icons/minecraft/ || true
           cp -r /tmp/mcassets/assets/minecraft/textures/item/. src/main/resources/static/icons/minecraft/ || true
+          node scripts/generateMinecraftModelIcons.cjs /tmp/client.jar src/main/resources/static/icons/minecraft /tmp/minecraftIcons.json
           echo "bundled minecraft icons: $(find src/main/resources/static/icons/minecraft -type f | wc -l)"
 
       - name: Setup Gradle

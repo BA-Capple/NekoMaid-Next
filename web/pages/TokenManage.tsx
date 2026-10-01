@@ -29,6 +29,7 @@ const FEATURES: Array<[string, string]> = [
   ['playerList', '玩家列表(查看)'],
   ['players', '玩家管理(封禁/白名单)'],
   ['worlds', '世界'],
+  ['worlds:write', '世界设置(写入)'],
   ['profiler', '性能'],
   ['scheduler', '任务(查看)'],
   ['entity', '实体(查看)'],

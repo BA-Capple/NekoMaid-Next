@@ -82,8 +82,9 @@ final class Worlds {
         }
         main.onConnected(main, client -> {
             if (!client.hasPermission("worlds")) return; // secondary tokens: read-only scope
-            client.onWithAck("worlds:fetch", this::getWorlds)
-                    .on("worlds:weather", args -> {
+            client.onWithAck("worlds:fetch", this::getWorlds);
+            if (!client.hasPermission("worlds:write")) return;
+            client.on("worlds:weather", args -> {
                         org.bukkit.World world = main.getServer().getWorld(UUID.fromString((String) args[0]));
                         if (world == null) return;
                         main.getServer().getScheduler().runTask(main, () -> {

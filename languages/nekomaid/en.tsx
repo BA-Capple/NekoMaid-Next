@@ -168,7 +168,7 @@ const lang: Language = {
     uncompressing: 'Decompressing...',
     notSelected: 'Choose the file to be edited from left first!',
     filesList: 'Files List',
-    uploadTooBig: 'File exceed 128MB!',
+    uploadTooBig: 'File exceeds the 1 GiB upload limit!',
     confirmDelete: (file: any) => <>Are you sure to delete {file} ?</>
   },
   inventory: {

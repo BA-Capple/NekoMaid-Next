@@ -1,6 +1,7 @@
 package cn.apisium.nekomaid.builtin;
 
 import cn.apisium.nekomaid.utils.ItemData;
+import cn.apisium.nekomaid.utils.Utils;
 import cn.apisium.nekomaid.NekoMaid;
 import com.janboerman.invsee.spigot.InvseePlusPlus;
 import com.janboerman.invsee.spigot.api.EnderSpectatorInventory;
@@ -12,12 +13,12 @@ import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
-import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.Plugin;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Collections;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 
 final class PlayerInventory {
     private boolean hasOpenInv, hasInvSee;
@@ -50,40 +51,43 @@ final class PlayerInventory {
         }
         main.onConnected(main, client -> {
             if (!client.hasPermission("inventory")) return; // secondary tokens: no inventory editing
-            client.onWithAck("inventory:fetchInv", args -> {
-            try (FakePlayer player = getFakePlayer((String) args[0])) {
-                if (player != null) return getInventoryItems(player.getInventory());
-            } catch (Throwable e) {
-                e.printStackTrace();
-            }
-            return Collections.emptyList();
-        }).onWithAck("inventory:fetchEnderChest", args -> {
-            try (FakePlayer player = getFakePlayer((String) args[0])) {
-                if (player != null) return getInventoryItems(player.getEnderChest());
-            } catch (Throwable e) {
-                e.printStackTrace();
-            }
-            return Collections.emptyList();
-        }).onWithAck("inventory:set", args -> {
-            try (FakePlayer player = getFakePlayer((String) args[1])) {
-                if (player == null) return false;
-                Inventory inv = "PLAYER".equals(args[0]) ? player.getInventory() : player.getEnderChest();
-                try {
-                    int to = (int) args[2], from = (int) args[4];
-                    ItemStack is = inv.getItem(to);
-                    String data = (String) args[3];
-                    inv.setItem(to, data == null ? null : ItemData.fromString(data).getItemStack());
-                    if (from != -1 && is != null) inv.setItem(from, is);
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-                return true;
-            } catch (Throwable e) {
-                e.printStackTrace();
-                return false;
-            }
+            // OpenInv and Bukkit inventories must be loaded, read, mutated and saved on
+            // the server thread. In particular, OpenInv 5.x schedules offline-player
+            // loading back to that thread and Paper rejects asynchronous saveData().
+            client.onWithAck("inventory:fetchInv",
+                            (Function<Object[], Object>) args -> Utils.sync(() -> fetch(args, false)))
+                    .onWithAck("inventory:fetchEnderChest",
+                            (Function<Object[], Object>) args -> Utils.sync(() -> fetch(args, true)))
+                    .onWithAck("inventory:set",
+                            (Function<Object[], Boolean>) args -> Utils.sync(() -> set(args)));
         });
-    });
+    }
+
+    private Object fetch(Object[] args, boolean enderChest) {
+        try (FakePlayer player = getFakePlayer((String) args[0])) {
+            if (player != null) return getInventoryItems(enderChest ? player.getEnderChest() : player.getInventory());
+        } catch (Throwable e) {
+            e.printStackTrace();
+        }
+        return Collections.emptyList();
+    }
+
+    private boolean set(Object[] args) {
+        try (FakePlayer player = getFakePlayer((String) args[1])) {
+            if (player == null) return false;
+            Inventory inv = "PLAYER".equals(args[0]) ? player.getInventory() : player.getEnderChest();
+            try {
+                int to = (int) args[2], from = (int) args[4];
+                String data = (String) args[3];
+                return ItemData.setInventoryItem(inv, to, data, from);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+            return false;
+        } catch (Throwable e) {
+            e.printStackTrace();
+            return false;
+        }
     }
 
     @Nullable
