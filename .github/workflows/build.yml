@@ -15,10 +15,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
       - name: Install panel dependencies
         run: npm ci --legacy-peer-deps --omit=optional --no-audit --no-fund
+      - name: Generate Minecraft language resources
+        run: npm run gen:minecraft:language
       - name: Check types
         run: npx tsc --noEmit --emitDeclarationOnly false
       - name: Build panel
@@ -40,7 +42,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
       - name: Install icon generator dependencies
