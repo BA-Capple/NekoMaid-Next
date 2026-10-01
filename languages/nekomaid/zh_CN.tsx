@@ -168,7 +168,7 @@ export default {
     uncompressing: '解压中...',
     notSelected: '请先在左侧选择要编辑的文件',
     filesList: '文件列表',
-    uploadTooBig: '文件超过128MB!',
+    uploadTooBig: '文件超过 1 GiB 上传上限！',
     confirmDelete: (file: any) => <>确认要删除 {file} 吗?</>
   },
   inventory: {

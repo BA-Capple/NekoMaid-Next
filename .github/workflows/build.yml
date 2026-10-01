@@ -9,6 +9,21 @@ on:
   workflow_dispatch:
 
 jobs:
+  build-panel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install panel dependencies
+        run: npm ci --legacy-peer-deps --omit=optional --no-audit --no-fund
+      - name: Check types
+        run: npx tsc --noEmit --emitDeclarationOnly false
+      - name: Build panel
+        run: npm run build
+
   build-plugin:
     runs-on: ubuntu-latest
     permissions:
@@ -23,6 +38,14 @@ jobs:
           distribution: temurin
           java-version: 25
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install icon generator dependencies
+        run: npm ci --legacy-peer-deps --omit=optional --no-audit --no-fund
+
       - name: Set plugin version (from release tag)
         if: github.event_name == 'release'
         run: |
@@ -35,10 +58,14 @@ jobs:
       # Tolerated on failure: the plugin still builds, the panel just loses those icons.
       - name: Fetch Minecraft block/item icons (Mojang assets stay out of the repository)
         continue-on-error: true
+        env:
+          TARGET_BRANCH: ${{ github.base_ref || github.ref_name }}
         run: |
           set -euo pipefail
           curl -fsSL -o /tmp/manifest.json https://piston-meta.mojang.com/mc/game/version_manifest_v2.json
-          url=$(jq -r '.versions[] | select(.id=="26.2" or .id=="1.21.11") | .url' /tmp/manifest.json | head -1)
+          mc_version=26.2
+          if [ "$TARGET_BRANCH" = "1.21.11" ]; then mc_version=1.21.11; fi
+          url=$(jq -r --arg version "$mc_version" '.versions[] | select(.id==$version) | .url' /tmp/manifest.json | head -1)
           if [ -z "$url" ]; then
             url=$(jq -r '[.versions[] | select(.type=="release")][0].url' /tmp/manifest.json)
           fi
@@ -50,6 +77,7 @@ jobs:
           # block first, then item, so an item texture wins where both exist
           cp -rn /tmp/mcassets/assets/minecraft/textures/block/. src/main/resources/static/icons/minecraft/ || true
           cp -r /tmp/mcassets/assets/minecraft/textures/item/. src/main/resources/static/icons/minecraft/ || true
+          node scripts/generateMinecraftModelIcons.cjs /tmp/client.jar src/main/resources/static/icons/minecraft /tmp/minecraftIcons.json
           echo "bundled minecraft icons: $(find src/main/resources/static/icons/minecraft -type f | wc -l)"
 
       - name: Setup Gradle

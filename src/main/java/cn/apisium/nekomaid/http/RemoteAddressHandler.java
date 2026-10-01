@@ -2,9 +2,10 @@ package cn.apisium.nekomaid.http;
 
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
-import io.netty.handler.codec.http.FullHttpRequest;
+import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.ssl.SslHandler;
+import io.netty.util.ReferenceCountUtil;
 
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
@@ -21,11 +22,10 @@ import java.util.function.BiConsumer;
  * overwriting the headers (nginx's {@code proxy_set_header X-Real-IP $remote_addr} does this).
  * Downstream code reads {@code X-Real-IP} only, so both modes look identical to it.</p>
  *
- * <p>Reachability: the {@code Host} header is reported through {@code hostListener} together with
- * whether this request arrived over TLS, which is how the plugin learns a working external address
- * to build management links from without being configured.</p>
+ * <p>Never use the request {@code Host} header to build a credential-bearing management link.
+ * The optional listener is retained for non-credential consumers; the panel does not install one.</p>
  */
-public final class RemoteAddressHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
+public final class RemoteAddressHandler extends SimpleChannelInboundHandler<HttpRequest> {
     /** Header the panel's authentication code reads the source address from. */
     public static final String REAL_IP_HEADER = "X-Real-IP";
     private static final String FORWARDED_FOR_HEADER = "X-Forwarded-For";
@@ -39,7 +39,7 @@ public final class RemoteAddressHandler extends SimpleChannelInboundHandler<Full
     }
 
     @Override
-    protected void channelRead0(ChannelHandlerContext ctx, FullHttpRequest msg) {
+    protected void channelRead0(ChannelHandlerContext ctx, HttpRequest msg) {
         if (!trustProxyHeaders) {
             msg.headers().remove(REAL_IP_HEADER);
             msg.headers().remove(FORWARDED_FOR_HEADER);
@@ -53,7 +53,7 @@ public final class RemoteAddressHandler extends SimpleChannelInboundHandler<Full
             }
         }
         // SimpleChannelInboundHandler releases the message, so retain it for the next handler.
-        ctx.fireChannelRead(msg.retain());
+        ctx.fireChannelRead(ReferenceCountUtil.retain(msg));
     }
 
     private static String socketAddressOf(SocketAddress address) {

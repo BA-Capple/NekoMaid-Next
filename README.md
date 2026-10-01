@@ -72,6 +72,15 @@ port-share:
 
 > 分流依据（`ProtocolDetector`）：TLS 记录（`0x16 0x03`）→ 面板；Minecraft handshake（VarInt 长度后紧跟 packet id `0x00`）→ 转发给真实 MC 端口；**其余一律视为 Minecraft**，未知流量不会被 Web 侧吞掉。
 
+> **IPv6 验证状态**：代码支持 IPv4/IPv6 地址和 PROXY Protocol TCP4/TCP6 编码，但当前发布验收环境只有 IPv4；原生 IPv6 公网连接及 IPv6→IPv4 混合地址族尚未做真实网络实机验证。需要 IPv6 的部署请先在测试服验证，再用于生产。
+
+## 面板数据操作
+
+- 背包、容器和实体物品栏的同栏拖拽由服务端在主线程内原子交换；取消拖拽不会预先清空来源槽。
+- 现代物品的名称、Lore、附魔、耐久、不可破坏和数量通过 Paper `ItemMeta` 编辑；未知 data components 保留在原始 NBT 中，高级用户仍可使用原始 SNBT 页。
+- 文件上传采用临时文件流式落盘，单文件上限 1 GiB；下载支持单段 `Range`/`206 Partial Content` 和断点续传。传输能力令牌 15 分钟过期，缓存最多 512 项。
+- 若面板经过 nginx 等反向代理，代理层的请求体上限和缓冲策略仍会先于插件生效；请把 `client_max_body_size` 设为所需上限，并建议对上传路径使用 `proxy_request_buffering off`。内置共端口不经过该限制。
+
 ## Commands
 
 - **/nekomaid help**: 帮助。

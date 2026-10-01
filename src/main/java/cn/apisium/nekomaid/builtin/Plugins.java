@@ -87,7 +87,7 @@ final class Plugins implements Listener {
         } catch (Throwable ignored) {
             dir = main.getDataFolder().getParentFile();
         }
-        pluginsDir = ((File) (dir != null ? dir : new File("plugins"))).toPath();
+        pluginsDir = ((File) (dir != null ? dir : new File("plugins"))).toPath().toAbsolutePath().normalize();
         main.onConnected(main, client -> {
             if (!client.hasPermission("plugins")) return; // secondary tokens: no plugin management
             client.on("plugins:fetch", () -> client.emit("plugins:list", getPluginsData()))
@@ -119,8 +119,8 @@ final class Plugins implements Listener {
                 })).onWithAck("plugins:disableForever", args -> (boolean) Utils.sync(() -> {
                     try {
                         String it = (String) args[0];
-                        Path file = pluginsDir.resolve(it);
-                        if (!file.startsWith(pluginsDir) || !Files.isRegularFile(file)) return false;
+                        Path file = safePluginFile(it);
+                        if (!Files.isRegularFile(file, java.nio.file.LinkOption.NOFOLLOW_LINKS)) return false;
                         if (it.endsWith(".jar")) {
                             Plugin pl = getPlugin(it);
                             if (pl != null) {
@@ -128,8 +128,8 @@ final class Plugins implements Listener {
                                 else if (HAS_PLUGMAN) PluginUtil.unload(pl);
                                 else return false;
                             }
-                            Files.move(file, pluginsDir.resolve(it + ".disabled"));
-                        } else Files.move(file, pluginsDir.resolve(it.replaceAll("\\.disabled$", "")));
+                            Files.move(file, safePluginFile(it + ".disabled"));
+                        } else Files.move(file, safePluginFile(it.replaceAll("\\.disabled$", "")));
                         refresh();
                         return true;
                     } catch (Throwable e) {
@@ -139,8 +139,8 @@ final class Plugins implements Listener {
                 })).onWithAck("plugins:delete", args -> {
                     try {
                         String it = (String) args[0];
-                        Path file = pluginsDir.resolve(it);
-                        if (!it.endsWith(".disabled") || !file.startsWith(pluginsDir) || !Files.isRegularFile(file)) return false;
+                        Path file = safePluginFile(it);
+                        if (!it.endsWith(".disabled") || !Files.isRegularFile(file, java.nio.file.LinkOption.NOFOLLOW_LINKS)) return false;
                         Files.delete(file);
                         refresh();
                         return true;
@@ -155,13 +155,22 @@ final class Plugins implements Listener {
     }
 
     private Plugin getPlugin(String it) throws Exception {
-        Path file = pluginsDir.resolve(it);
-        if (!file.startsWith(pluginsDir) || !Files.isRegularFile(file)) throw new IOException("This path is not a regular file!");
-        if (it.endsWith(".disabled")) Files.move(file, pluginsDir.resolve(it.replaceAll("\\.disabled$", "")));
+        Path file = safePluginFile(it);
+        if (!Files.isRegularFile(file, java.nio.file.LinkOption.NOFOLLOW_LINKS)) throw new IOException("This path is not a regular file!");
+        if (it.endsWith(".disabled")) Files.move(file, safePluginFile(it.replaceAll("\\.disabled$", "")));
         if (!it.endsWith(".jar")) throw new IOException("This path is not a jar file!");
         File f = file.toFile();
         String name = main.getPluginLoader().getPluginDescription(f).getName();
         return pm.getPlugin(name);
+    }
+
+    private Path safePluginFile(String name) throws IOException {
+        if (!name.matches("[^/\\\\]+\\.jar(\\.disabled)?") || name.equals(".") || name.equals(".."))
+            throw new IOException("Invalid plugin filename");
+        Path file = pluginsDir.resolve(name).normalize();
+        if (!file.getParent().equals(pluginsDir) || Files.isSymbolicLink(file))
+            throw new IOException("Plugin path leaves the plugins directory");
+        return file;
     }
 
     private ArrayList<PluginInfo> getPluginsData() {

@@ -50,7 +50,9 @@ final class Terminal implements Appender {
                 null, null
         );
         ProxiedConsoleCommandSender sender = new ProxiedConsoleCommandSender(main.getServer().getConsoleSender());
-        main.onSwitchPage(main, "console", client -> client.emit("console:logs", queue))
+        main.onSwitchPage(main, "console", client -> {
+            if (client.hasPermission("terminal")) client.emit("console:logs", queue);
+        })
                 .onConnected(main, client -> {
                     if (!client.hasPermission("terminal")) return; // secondary tokens: no console access
                     client.onWithAck("console:complete", Utils::complete)

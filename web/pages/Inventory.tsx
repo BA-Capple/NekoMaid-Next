@@ -57,7 +57,7 @@ const Inventory: React.FC = () => {
       ? inv.map((it, i) => <React.Fragment key={i}><ItemViewer
         item={it}
         data={{ type, solt: i, player }}
-        onDrag={() => plugin.emit('inventory:set', update, type, player, i, null, -1)}
+        onDrag={() => {}}
         onDrop={(item, obj) => plugin.emit('inventory:set', update, type,
           player, i, JSON.stringify(item), obj?.type === type && obj?.player === player ? obj.solt : -1)}
         onEdit={item => item !== false && plugin.emit('inventory:set', updateWithAction, type, player, i, item && JSON.stringify(item), -1)}

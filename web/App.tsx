@@ -145,7 +145,7 @@ const App: React.FC<{ darkMode: boolean, setDarkMode: (a: boolean) => void }> = 
       input: {
         label: lang.twoFactorCode,
         inputMode: 'numeric',
-        validator: value => /^\d{6}$/.test(value) || lang.twoFactorInvalid
+        validator: (value: string) => /^\d{6}$/.test(value) || lang.twoFactorInvalid
       }
     }).then(code => {
       setTwoFactorRequired(false)

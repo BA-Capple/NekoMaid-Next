@@ -151,7 +151,7 @@ const Item: React.FC<{ plugin: Plugin, path: string, loading: Record<string, () 
   ({ dirs, plugin, path, loading }) => {
     const [open, setOpen] = useState(false)
     const [files, setFiles] = useState<[string[], string[]] | undefined>()
-    const load = () => new Promise<void>(resolve => plugin.emit('files:fetch', (data: [string[], string[]]) => {
+  const load = () => new Promise<void>(resolve => plugin.emit('files:fetch', (data: [string[], string[]]) => {
       setFiles(data)
       resolve()
       if (typeof ''.localeCompare === 'function') {
@@ -504,14 +504,12 @@ const Files: React.FC = () => {
       elm.value = ''
       if (!file) return
       const size = file.size
-      if (size > 128 * 1024 * 1024) return failed(lang.files.uploadTooBig)
+      if (size > 1024 * 1024 * 1024) return failed(lang.files.uploadTooBig)
       toast(lang.files.uploading)
       const name = dirPath + '/' + file.name
       if (dirs.current[name] != null) return failed(lang.files.exists)
       plugin.emit('files:upload', (res: string | null) => {
         if (!res) return failed(lang.files.exists)
-        const formdata = new FormData()
-        formdata.append('file', file)
         const xhr = new XMLHttpRequest()
         setProgress(0)
         xhr.open('put', address! + 'Upload/' + res)
@@ -522,7 +520,7 @@ const Files: React.FC = () => {
           refresh()
         }
         xhr.upload.onprogress = e => e.lengthComputable && setProgress(e.loaded / e.total * 100)
-        xhr.send(formdata)
+        xhr.send(file)
       }, name[0] === '/' ? name.slice(1) : name)
     }} />
     <CompressDialog file={compressFile} path={dirPath} dirs={dirs.current} onClose={() => setCompressFile(null)} refresh={refresh} plugin={plugin} />

@@ -115,11 +115,14 @@ final class Editors {
                 if (world != null) try {
                     Block b = world.getBlockAt((int) args[1], (int) args[2], (int) args[3]);
                     BlockState state = b.getState();
-                    if (Utils.hasNBTAPI() && args[4] != null) try {
-                        NBTAPIWrapper.mergeCompound(NBTAPIWrapper.newNBTTileEntity(state), (String) args[4]);
-                    } catch (Throwable e) { e.printStackTrace(); }
-                    if (hasBlockData && args[5] != null)
-                        state.setBlockData(main.getServer().createBlockData((String) args[5]));
+                    if (Utils.hasNBTAPI() && args[4] != null) {
+                        try {
+                            NBTAPIWrapper.mergeCompound(NBTAPIWrapper.newNBTTileEntity(state), (String) args[4]);
+                        } catch (Throwable e) { e.printStackTrace(); return false; }
+                    }
+                    if (hasBlockData && args[5] != null) {
+                        b.setBlockData(main.getServer().createBlockData((String) args[5]));
+                    }
                     return true;
                 } catch (Throwable e) { e.printStackTrace(); }
                 return false;
@@ -130,11 +133,8 @@ final class Editors {
                     if (state instanceof BlockInventoryHolder) {
                         Inventory inv = ((BlockInventoryHolder) state).getInventory();
                         int to = (int) args[4], from = (int) args[6];
-                        ItemStack is = inv.getItem(to);
                         String data = (String) args[5];
-                        inv.setItem(to, data == null ? null : ItemData.fromString(data).getItemStack());
-                        if (from != -1 && is != null) inv.setItem(from, is);
-                        return true;
+                        return ItemData.setInventoryItem(inv, to, data, from);
                     }
                 } catch (Throwable e) { e.printStackTrace(); }
                 return false;
@@ -168,11 +168,8 @@ final class Editors {
                 if (entity instanceof InventoryHolder) try {
                     Inventory inv = ((InventoryHolder) entity).getInventory();
                     int to = (int) args[1], from = (int) args[3];
-                    ItemStack is = inv.getItem(to);
                     String data = (String) args[2];
-                    inv.setItem(to, data == null ? null : ItemData.fromString(data).getItemStack());
-                    if (from != -1 && is != null) inv.setItem(from, is);
-                    return true;
+                    return ItemData.setInventoryItem(inv, to, data, from);
                 } catch (Throwable e) { e.printStackTrace(); }
                 return false;
             }); }).onWithAck("entity:set", (Function<Object[], Boolean>) args -> { if (!client.hasPermission("editors")) return false; return sync(() -> {
@@ -189,19 +186,20 @@ final class Editors {
                 }
                 return false;
             }); });
-            if (Utils.hasNBTAPI()) {
-                client.onWithAck("entity:save", (Function<Object[], Boolean>) args -> { if (!client.hasPermission("editors")) return false; return sync(() -> {
+            client.onWithAck("entity:save", (Function<Object[], Boolean>) args -> { if (!client.hasPermission("editors")) return false; return sync(() -> {
                     Entity entity = main.getServer().getEntity(UUID.fromString((String) args[0]));
                     if (entity != null) {
-                        if (args[1] != null) try {
-                            NBTAPIWrapper.mergeCompound(NBTAPIWrapper.newNBTEntity(entity), (String) args[1]);
-                        } catch (Throwable e) { e.printStackTrace(); }
+                        if (args[1] != null) {
+                            if (!Utils.hasNBTAPI()) return false;
+                            try {
+                                NBTAPIWrapper.mergeCompound(NBTAPIWrapper.newNBTEntity(entity), (String) args[1]);
+                            } catch (Throwable e) { e.printStackTrace(); return false; }
+                        }
                         entity.setCustomName((String) args[2]);
                         return true;
                     }
                     return false;
                 }); });
-            }
         }).registerCommand(main, "block", new NekoMaidCommand() {
             @Override
             public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command,

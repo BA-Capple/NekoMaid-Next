@@ -21,11 +21,14 @@ import io.netty.handler.codec.http.websocketx.extensions.compression.WebSocketSe
 import io.netty.handler.ssl.SslContext;
 import io.netty.handler.stream.ChunkedFile;
 import io.netty.handler.stream.ChunkedWriteHandler;
+import io.netty.util.ReferenceCountUtil;
+import io.netty.util.concurrent.DefaultEventExecutorGroup;
 import io.socket.engineio.server.EngineIoServer;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 
 import java.io.File;
+import java.io.OutputStream;
 import java.io.RandomAccessFile;
 import java.net.Inet6Address;
 import java.net.InetAddress;
@@ -33,9 +36,12 @@ import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.Base64;
+import java.util.concurrent.TimeUnit;
 
 /**
  * A standalone Netty HTTP server which serves the NekoMaid web panel, socket.io realtime
@@ -57,7 +63,9 @@ import java.util.Base64;
  * </ul>
  */
 public final class NekoMaidHttpServer {
-    private static final int MAX_CONTENT_LENGTH = 5 * 1024 * 1024; // 5MB
+    private static final int MAX_CONTENT_LENGTH = 16 * 1024 * 1024;
+    /** Uploads bypass the HTTP aggregator and stream to a temporary file up to this disk bound. */
+    public static final long MAX_UPLOAD_LENGTH = 1024L * 1024 * 1024;
     private static final String SOCKET_IO_PATH = "/NekoMaid/";
     private static final String UPLOAD_PATH = "/NekoMaidUpload/";
     private static final String DOWNLOAD_PATH = "/NekoMaidDownload/";
@@ -77,6 +85,7 @@ public final class NekoMaidHttpServer {
 
     private EventLoopGroup bossGroup;
     private EventLoopGroup workerGroup;
+    private DefaultEventExecutorGroup uploadExecutorGroup;
     private Channel serverChannel;
     private Channel sharedChannel;
 
@@ -154,14 +163,17 @@ public final class NekoMaidHttpServer {
         if (serverChannel != null || sharedChannel != null) return;
         bossGroup = new NioEventLoopGroup(1);
         workerGroup = new NioEventLoopGroup();
+        uploadExecutorGroup = new DefaultEventExecutorGroup(2);
         try {
             Options.Share share = options.share();
             if (options.tls().enabled()) {
                 primarySslContext = buildTls(options.tls(), "the web panel");
-                primaryUsesTls = primarySslContext != null;
+                if (primarySslContext == null) throw new IllegalStateException("TLS was requested for the web panel");
+                primaryUsesTls = true;
             }
             if (share.enabled() && share.tls().enabled()) {
                 sharedSslContext = buildTls(share.tls(), "the shared port");
+                if (sharedSslContext == null) throw new IllegalStateException("TLS was requested for the shared port");
             }
 
             if (options.port() > 0) {
@@ -208,10 +220,18 @@ public final class NekoMaidHttpServer {
     }
 
     private void shutdownGroups() {
-        if (bossGroup != null) bossGroup.shutdownGracefully();
-        if (workerGroup != null) workerGroup.shutdownGracefully();
+        // Keep the upload executor alive until every child channel has fired its final pipeline
+        // events. Shutting it down alongside the worker group races channelInactive/destroy and
+        // produces RejectedExecutionException warnings on an otherwise clean Paper shutdown.
+        if (bossGroup != null)
+            bossGroup.shutdownGracefully(0, 5, TimeUnit.SECONDS).syncUninterruptibly();
+        if (workerGroup != null)
+            workerGroup.shutdownGracefully(0, 5, TimeUnit.SECONDS).syncUninterruptibly();
+        if (uploadExecutorGroup != null)
+            uploadExecutorGroup.shutdownGracefully(0, 5, TimeUnit.SECONDS).syncUninterruptibly();
         bossGroup = null;
         workerGroup = null;
+        uploadExecutorGroup = null;
     }
 
     private Channel bind(String address, int port, boolean shared, int listenPort) throws InterruptedException {
@@ -239,8 +259,8 @@ public final class NekoMaidHttpServer {
     /**
      * Builds the TLS context for one listener. Configured PEM files win; when they are missing or
      * unreadable a self-signed certificate is generated (once, then reused from disk) so a fresh
-     * install still speaks HTTPS. Returns {@code null} when TLS cannot be established, in which
-     * case the caller serves plain HTTP.
+     * install still speaks HTTPS. Returns {@code null} when TLS cannot be established; the caller
+     * refuses to bind that listener instead of silently falling back to HTTP.
      */
     private SslContext buildTls(Options.Tls tls, String scope) {
         try {
@@ -322,11 +342,15 @@ public final class NekoMaidHttpServer {
      */
     private void addHttpHandlers(ChannelPipeline p, int listenPort, boolean tlsTerminated) {
         p.addLast(new HttpServerCodec());
+        // Header normalisation and the upload stream run before aggregation. Large PUT bodies are
+        // consumed a chunk at a time on a dedicated executor; socket.io and ordinary requests keep
+        // the bounded in-memory aggregator they already relied on.
+        p.addLast(new RemoteAddressHandler(options.trustProxyHeaders(), null));
+        p.addLast(uploadExecutorGroup, "streaming-upload", new StreamingUploadHandler());
         p.addLast(new HttpObjectAggregator(MAX_CONTENT_LENGTH));
         p.addLast(new ChunkedWriteHandler());
         if (options.gzip()) p.addLast(new HttpContentCompressor());
         p.addLast(new WebSocketServerCompressionHandler());
-        p.addLast(new RemoteAddressHandler(options.trustProxyHeaders(), plugin::rememberPanelAddress));
         p.addLast(new EngineIoHandler(engineIoServer, SOCKET_IO_PATH,
                 (tlsTerminated ? "wss://" : "ws://") + "localhost:" + listenPort, MAX_CONTENT_LENGTH) {
             @Override
@@ -336,6 +360,150 @@ public final class NekoMaidHttpServer {
             }
         });
         p.addLast(new MainHttpHandler());
+    }
+
+    /** Streams authenticated upload capabilities directly to disk instead of aggregating them. */
+    private final class StreamingUploadHandler extends ChannelInboundHandlerAdapter {
+        private boolean uploading;
+        private Path target;
+        private Path temporary;
+        private OutputStream output;
+        private long written;
+        private String origin;
+
+        @Override
+        public void channelRead(ChannelHandlerContext ctx, Object msg) {
+            try {
+                if (!uploading && msg instanceof HttpRequest) {
+                    HttpRequest request = (HttpRequest) msg;
+                    String path = new QueryStringDecoder(request.uri()).path();
+                    if (request.method() == HttpMethod.PUT && path.startsWith(UPLOAD_PATH)) {
+                        uploading = true;
+                        origin = request.headers().get(HttpHeaderNames.ORIGIN);
+                        long declared = HttpUtil.getContentLength(request, -1);
+                        if (declared > MAX_UPLOAD_LENGTH) {
+                            ReferenceCountUtil.release(msg);
+                            fail(ctx, HttpResponseStatus.REQUEST_ENTITY_TOO_LARGE, "Upload exceeds 1 GiB");
+                            return;
+                        }
+                        String id = path.substring(UPLOAD_PATH.length());
+                        target = uploadMap.asMap().remove(id);
+                        if (target == null) {
+                            ReferenceCountUtil.release(msg);
+                            fail(ctx, HttpResponseStatus.NOT_FOUND, "Not Found");
+                            return;
+                        }
+                        Path root = Paths.get(".").toRealPath();
+                        Path absolute = target.toAbsolutePath().normalize();
+                        Path parent = target.getParent();
+                        if (!absolute.startsWith(root) || parent == null || !parent.toRealPath().startsWith(root)
+                                || Files.exists(target, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                            ReferenceCountUtil.release(msg);
+                            fail(ctx, HttpResponseStatus.FORBIDDEN, "Forbidden");
+                            return;
+                        }
+                        temporary = Files.createTempFile(parent, ".nekomaid-upload-", ".tmp");
+                        output = Files.newOutputStream(temporary);
+                        // A FullHttpRequest can occur in embedded tests; consume its body here.
+                        if (msg instanceof HttpContent) consume(ctx, (HttpContent) msg);
+                        ReferenceCountUtil.release(msg);
+                        return;
+                    }
+                }
+                if (uploading && msg instanceof HttpContent) {
+                    consume(ctx, (HttpContent) msg);
+                    ReferenceCountUtil.release(msg);
+                    return;
+                }
+                ctx.fireChannelRead(msg);
+            } catch (Throwable e) {
+                ReferenceCountUtil.release(msg);
+                if (plugin.isDebug()) e.printStackTrace();
+                fail(ctx, HttpResponseStatus.INTERNAL_SERVER_ERROR, "Internal Server Error");
+            }
+        }
+
+        private void consume(ChannelHandlerContext ctx, HttpContent content) throws Exception {
+            int length = content.content().readableBytes();
+            if (written + length > MAX_UPLOAD_LENGTH) {
+                fail(ctx, HttpResponseStatus.REQUEST_ENTITY_TOO_LARGE, "Upload exceeds 1 GiB");
+                return;
+            }
+            if (length > 0) {
+                byte[] bytes = new byte[length];
+                content.content().readBytes(bytes);
+                output.write(bytes);
+                written += length;
+            }
+            if (content instanceof LastHttpContent) complete(ctx);
+        }
+
+        private void complete(ChannelHandlerContext ctx) throws Exception {
+            closeOutput();
+            Path root = Paths.get(".").toRealPath();
+            Path parent = target.getParent();
+            if (parent == null || !target.toAbsolutePath().normalize().startsWith(root)
+                    || !parent.toRealPath().startsWith(root)
+                    || Files.exists(target, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                fail(ctx, HttpResponseStatus.FORBIDDEN, "Forbidden");
+                return;
+            }
+            try {
+                Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException ignored) {
+                Files.move(temporary, target);
+            }
+            temporary = null;
+            HttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
+            addCorsHeaders(origin, response);
+            HttpUtil.setContentLength(response, 0);
+            reset();
+            ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
+        }
+
+        private void fail(ChannelHandlerContext ctx, HttpResponseStatus status, String message) {
+            cleanup();
+            FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, status,
+                    Unpooled.copiedBuffer(message, StandardCharsets.UTF_8));
+            response.headers().set(HttpHeaderNames.CONTENT_TYPE, "text/plain; charset=UTF-8");
+            addCorsHeaders(origin, response);
+            HttpUtil.setContentLength(response, response.content().readableBytes());
+            reset();
+            ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
+        }
+
+        private void closeOutput() {
+            if (output != null) try { output.close(); } catch (Throwable ignored) { }
+            output = null;
+        }
+
+        private void cleanup() {
+            closeOutput();
+            if (temporary != null) try { Files.deleteIfExists(temporary); } catch (Throwable ignored) { }
+            temporary = null;
+        }
+
+        private void reset() {
+            uploading = false;
+            target = null;
+            written = 0;
+            origin = null;
+        }
+
+        @Override
+        public void channelInactive(ChannelHandlerContext ctx) throws Exception {
+            cleanup();
+            reset();
+            super.channelInactive(ctx);
+        }
+
+        @Override
+        public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) {
+            if (plugin.isDebug()) cause.printStackTrace();
+            cleanup();
+            reset();
+            ctx.close();
+        }
     }
 
     /** Builds the sniffer used on the shared port; it installs the detected protocol's handlers. */
@@ -416,11 +584,18 @@ public final class NekoMaidHttpServer {
             InetSocketAddress inet = (InetSocketAddress) remote;
             InetAddress address = inet.getAddress();
             if (address == null) return;
-            boolean ipv6 = address instanceof Inet6Address;
+            InetSocketAddress destination = (InetSocketAddress) back.remoteAddress();
+            InetAddress destinationAddress = destination.getAddress();
+            if (destinationAddress == null) throw new IllegalStateException("Unresolved Minecraft relay target");
+            boolean ipv6 = address instanceof Inet6Address || destinationAddress instanceof Inet6Address;
+            String sourceIp = address.getHostAddress();
+            String destinationIp = destinationAddress.getHostAddress();
+            if (ipv6 && !(address instanceof Inet6Address)) sourceIp = "::ffff:" + sourceIp;
+            if (ipv6 && !(destinationAddress instanceof Inet6Address)) destinationIp = "::ffff:" + destinationIp;
             HAProxyMessage message = new HAProxyMessage(HAProxyProtocolVersion.V1, HAProxyCommand.PROXY,
                     ipv6 ? HAProxyProxiedProtocol.TCP6 : HAProxyProxiedProtocol.TCP4,
-                    address.getHostAddress(), options.share().minecraftHost(),
-                    inet.getPort(), options.share().minecraftPort());
+                    sourceIp, destinationIp,
+                    inet.getPort(), destination.getPort());
             back.writeAndFlush(message);
         } catch (Throwable e) {
             plugin.getLogger().warning("Failed to send the PROXY protocol header: " + e);
@@ -447,9 +622,13 @@ public final class NekoMaidHttpServer {
         protected void channelRead0(ChannelHandlerContext ctx, FullHttpRequest request) {
             try {
                 String uri = request.uri();
-                if (uri.startsWith(UPLOAD_PATH) && request.method() == HttpMethod.PUT) {
-                    handleUpload(ctx, request);
-                } else if (uri.startsWith(DOWNLOAD_PATH) && request.method() == HttpMethod.GET) {
+                if (uri.startsWith(UPLOAD_PATH) && request.method() == HttpMethod.OPTIONS) {
+                    HttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.NO_CONTENT);
+                    addCorsHeaders(request, response);
+                    HttpUtil.setContentLength(response, 0);
+                    ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
+                } else if (uri.startsWith(DOWNLOAD_PATH)
+                        && (request.method() == HttpMethod.GET || request.method() == HttpMethod.HEAD)) {
                     handleDownload(ctx, request);
                 } else {
                     handleStatic(ctx, request);
@@ -467,35 +646,6 @@ public final class NekoMaidHttpServer {
             if (ctx.channel().isActive()) ctx.close();
         }
 
-        private void handleUpload(ChannelHandlerContext ctx, FullHttpRequest request) {
-            String id = request.uri().substring(UPLOAD_PATH.length());
-            Path target = uploadMap.getIfPresent(id);
-            if (target == null) {
-                sendSimple(ctx, HttpResponseStatus.NOT_FOUND, "text/plain; charset=UTF-8", "Not Found");
-                return;
-            }
-            try {
-                // Defense in depth: the capability was issued against a validated, symlink-free
-                // path, but re-check here so a symlink swapped in during the (<=15 min) window
-                // cannot redirect the write outside the server root.
-                if (Files.isSymbolicLink(target) ||
-                        (target.getParent() != null && Files.isSymbolicLink(target.getParent()))) {
-                    sendSimple(ctx, HttpResponseStatus.FORBIDDEN, "text/plain; charset=UTF-8", "Forbidden");
-                    return;
-                }
-                byte[] data = new byte[request.content().readableBytes()];
-                request.content().readBytes(data);
-                Files.write(target, data);
-                HttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
-                addCorsHeaders(request, response);
-                ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
-            } catch (Throwable e) {
-                if (plugin.isDebug()) e.printStackTrace();
-                sendSimple(ctx, HttpResponseStatus.INTERNAL_SERVER_ERROR, "text/plain; charset=UTF-8",
-                        "Internal Server Error");
-            }
-        }
-
         private void handleDownload(ChannelHandlerContext ctx, FullHttpRequest request) {
             String id = request.uri().substring(DOWNLOAD_PATH.length());
             Path file = downloadMap.getIfPresent(id);
@@ -504,16 +654,46 @@ public final class NekoMaidHttpServer {
                 return;
             }
             try {
-                RandomAccessFile raf = new RandomAccessFile(file.toFile(), "r");
+                Path root = Paths.get(".").toRealPath();
+                Path realFile = file.toRealPath();
+                if (!realFile.startsWith(root)) {
+                    sendSimple(ctx, HttpResponseStatus.FORBIDDEN, "text/plain; charset=UTF-8", "Forbidden");
+                    return;
+                }
+                RandomAccessFile raf = new RandomAccessFile(realFile.toFile(), "r");
                 long length = raf.length();
-                HttpResponse response = new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK);
-                HttpUtil.setContentLength(response, length);
+                ByteRange range;
+                try {
+                    range = parseRange(request.headers().get(HttpHeaderNames.RANGE), length);
+                } catch (IllegalArgumentException ignored) {
+                    raf.close();
+                    FullHttpResponse response = new DefaultFullHttpResponse(
+                            HttpVersion.HTTP_1_1, HttpResponseStatus.REQUESTED_RANGE_NOT_SATISFIABLE);
+                    response.headers().set(HttpHeaderNames.CONTENT_RANGE, "bytes */" + length)
+                            .set(HttpHeaderNames.ACCEPT_RANGES, HttpHeaderValues.BYTES);
+                    addCorsHeaders(request, response);
+                    HttpUtil.setContentLength(response, 0);
+                    ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
+                    return;
+                }
+                long offset = range == null ? 0 : range.start();
+                long responseLength = range == null ? length : range.length();
+                HttpResponse response = new DefaultHttpResponse(HttpVersion.HTTP_1_1,
+                        range == null ? HttpResponseStatus.OK : HttpResponseStatus.PARTIAL_CONTENT);
+                HttpUtil.setContentLength(response, responseLength);
+                response.headers().set(HttpHeaderNames.ACCEPT_RANGES, HttpHeaderValues.BYTES);
+                if (range != null) response.headers().set(HttpHeaderNames.CONTENT_RANGE,
+                        "bytes " + range.start() + "-" + range.end() + "/" + length);
+                // ChunkedFile is a file region, not an HTTP content chunk. Do not advertise gzip.
+                response.headers().set(HttpHeaderNames.CONTENT_ENCODING, "identity");
                 response.headers().set(HttpHeaderNames.CONTENT_TYPE, HttpHeaderValues.APPLICATION_OCTET_STREAM)
                         .set(HttpHeaderNames.CONTENT_DISPOSITION,
-                                "attachment; filename=" + file.getFileName().toString());
+                                "attachment; filename*=UTF-8''" + java.net.URLEncoder.encode(
+                                        realFile.getFileName().toString(), StandardCharsets.UTF_8).replace("+", "%20"));
                 addCorsHeaders(request, response);
                 ctx.write(response);
-                ctx.write(new ChunkedFile(raf, 0, length, 8192), ctx.newProgressivePromise());
+                if (request.method() == HttpMethod.HEAD || responseLength == 0) raf.close();
+                else ctx.write(new ChunkedFile(raf, offset, responseLength, 8192), ctx.newProgressivePromise());
                 ctx.writeAndFlush(LastHttpContent.EMPTY_LAST_CONTENT).addListener(ChannelFutureListener.CLOSE);
             } catch (Throwable e) {
                 if (plugin.isDebug()) e.printStackTrace();
@@ -588,6 +768,34 @@ public final class NekoMaidHttpServer {
         }
     }
 
+    /** Parses a single RFC 7233 bytes range. Multiple ranges intentionally return 416. */
+    private static ByteRange parseRange(String header, long length) {
+        if (header == null || header.isBlank()) return null;
+        if (!header.startsWith("bytes=") || header.indexOf(',') >= 0 || length <= 0)
+            throw new IllegalArgumentException("Unsupported range");
+        String value = header.substring(6).trim();
+        int dash = value.indexOf('-');
+        if (dash < 0) throw new IllegalArgumentException("Malformed range");
+        try {
+            if (dash == 0) {
+                long suffix = Long.parseLong(value.substring(1));
+                if (suffix <= 0) throw new IllegalArgumentException("Empty suffix");
+                long start = Math.max(0, length - suffix);
+                return new ByteRange(start, length - 1);
+            }
+            long start = Long.parseLong(value.substring(0, dash));
+            long end = dash == value.length() - 1 ? length - 1 : Long.parseLong(value.substring(dash + 1));
+            if (start < 0 || start >= length || end < start) throw new IllegalArgumentException("Invalid range");
+            return new ByteRange(start, Math.min(end, length - 1));
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("Malformed range", e);
+        }
+    }
+
+    private record ByteRange(long start, long end) {
+        long length() { return end - start + 1; }
+    }
+
     private static void sendSimple(ChannelHandlerContext ctx, HttpResponseStatus status, String contentType,
                                    String body) {
         FullHttpResponse response = new DefaultFullHttpResponse(
@@ -600,11 +808,17 @@ public final class NekoMaidHttpServer {
 
     private static void addCorsHeaders(HttpRequest request, HttpResponse response) {
         String origin = request.headers().get(HttpHeaderNames.ORIGIN);
+        addCorsHeaders(origin, response);
+    }
+
+    private static void addCorsHeaders(String origin, HttpResponse response) {
         if (origin != null) {
             response.headers()
                     .set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, origin)
-                    .set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_METHODS, "GET,POST,PUT,OPTIONS")
-                    .set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_HEADERS, "origin, content-type, accept");
+                    .set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_METHODS, "GET,HEAD,POST,PUT,OPTIONS")
+                    .set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_HEADERS, "origin, content-type, accept, range")
+                    .set(HttpHeaderNames.ACCESS_CONTROL_EXPOSE_HEADERS,
+                            "accept-ranges, content-range, content-length, content-disposition");
         }
     }
 

@@ -197,7 +197,7 @@ const EntityEditor: React.FC = () => {
                 {entity.inventory.map((it, i) => <React.Fragment key={i}><ItemViewer
                   item={it}
                   data={{ type: InvType.ENTITY, solt: i, id }}
-                  onDrag={() => plugin.emit('entity:setItem', update, id, i, null, -1)}
+                  onDrag={() => {}}
                   onDrop={(item, obj) => plugin.emit('entity:setItem', update, id, i, JSON.stringify(item),
                     obj?.type === InvType.ENTITY && obj.id === id ? obj.solt : -1)}
                   onEdit={item => item !== false && plugin.emit('entity:setItem', updateWithAction, id, i, item && JSON.stringify(item), -1)}
